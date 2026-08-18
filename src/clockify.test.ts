@@ -2,10 +2,17 @@ import { expect, test } from "bun:test";
 import { interval, localToUtc, pick, utcToLocal } from "./clockify.ts";
 
 test("localToUtc handles DST", () => {
-  expect(localToUtc("2026-08-18T09:00", "Europe/Rome").toISOString()).toBe("2026-08-18T07:00:00.000Z");
-  expect(localToUtc("2026-01-18T09:00", "Europe/Rome").toISOString()).toBe("2026-01-18T08:00:00.000Z");
+  expect(localToUtc("2026-08-18T09:00", "Europe/Rome").toISOString()).toBe(
+    "2026-08-18T07:00:00.000Z",
+  );
+  expect(localToUtc("2026-01-18T09:00", "Europe/Rome").toISOString()).toBe(
+    "2026-01-18T08:00:00.000Z",
+  );
   // round-trip back into the same zone
-  expect(utcToLocal("2026-08-18T07:00:00Z", "Europe/Rome")).toMatchObject({ date: "2026-08-18", time: "09:00" });
+  expect(utcToLocal("2026-08-18T07:00:00Z", "Europe/Rome")).toMatchObject({
+    date: "2026-08-18",
+    time: "09:00",
+  });
 });
 
 test("pick: exact beats substring, ambiguous throws with candidates", () => {

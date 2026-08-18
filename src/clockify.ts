@@ -7,7 +7,10 @@ export async function api(path: string, init?: RequestInit) {
     ...init,
     headers: { "X-Api-Key": key, "Content-Type": "application/json", ...init?.headers },
   });
-  if (!res.ok) throw new Error(`Clockify ${init?.method ?? "GET"} ${path} → ${res.status}: ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(
+      `Clockify ${init?.method ?? "GET"} ${path} → ${res.status}: ${await res.text()}`,
+    );
   return res.status === 204 ? null : res.json();
 }
 
@@ -17,7 +20,8 @@ export type Project = { id: string; name: string; clientName?: string; archived:
 // ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session
 let _me: Promise<Me> | undefined;
 export function me(): Promise<Me> {
-  return (_me ??= api("/user") as Promise<Me>);
+  _me ??= api("/user") as Promise<Me>;
+  return _me;
 }
 
 export async function workspaceId() {
@@ -31,9 +35,10 @@ export async function timeZone() {
 let _projects: Promise<Project[]> | undefined;
 export function projects(): Promise<Project[]> {
   // ponytail: one page of 200 — paginate if someone actually has more projects than that
-  return (_projects ??= workspaceId().then(
-    (ws) => api(`/workspaces/${ws}/projects?archived=false&page-size=200`) as Promise<Project[]>
-  ));
+  _projects ??= workspaceId().then(
+    (ws) => api(`/workspaces/${ws}/projects?archived=false&page-size=200`) as Promise<Project[]>,
+  );
+  return _projects;
 }
 
 const _tasks = new Map<string, Promise<{ id: string; name: string }[]>>();
@@ -41,7 +46,10 @@ function tasks(projectId: string) {
   const cached = _tasks.get(projectId);
   if (cached) return cached;
   const p = workspaceId().then(
-    (ws) => api(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`) as Promise<{ id: string; name: string }[]>
+    (ws) =>
+      api(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`) as Promise<
+        { id: string; name: string }[]
+      >,
   );
   _tasks.set(projectId, p);
   return p;
@@ -52,10 +60,10 @@ export function pick<T extends { name: string }>(kind: string, name: string, ite
   const n = name.trim().toLowerCase();
   const exact = items.filter((i) => i.name.toLowerCase() === n);
   const hits = exact.length ? exact : items.filter((i) => i.name.toLowerCase().includes(n));
-  if (hits.length === 1) return hits[0]!;
+  if (hits.length === 1) return hits[0];
   const candidates = (hits.length ? hits : items).map((i) => i.name).join(", ");
   throw new Error(
-    `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${candidates || "(none)"}`
+    `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${candidates || "(none)"}`,
   );
 }
 
@@ -81,16 +89,17 @@ function parts(d: Date, tz: string) {
       second: "2-digit",
     })
       .formatToParts(d)
-      .map((x) => [x.type, x.value])
-  ) as Record<string, string>;
+      .map((x) => [x.type, x.value]),
+  ) as Record<"year" | "month" | "day" | "hour" | "minute" | "second" | "weekday", string>;
 }
 
 /** `localToUtc("2026-08-18T09:00", "Europe/Rome")` → the instant that is 09:00 in Rome. */
 export function localToUtc(local: string, tz: string): Date {
-  const d = new Date(local + "Z");
-  if (isNaN(d.getTime())) throw new Error(`Invalid local datetime "${local}" (expected YYYY-MM-DDTHH:MM)`);
+  const d = new Date(`${local}Z`);
+  if (Number.isNaN(d.getTime()))
+    throw new Error(`Invalid local datetime "${local}" (expected YYYY-MM-DDTHH:MM)`);
   const p = parts(d, tz);
-  const asUtc = Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour! % 24, +p.minute!, +p.second!);
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
   return new Date(d.getTime() - (asUtc - d.getTime()));
 }
 
@@ -99,15 +108,15 @@ export function utcToLocal(iso: string, tz: string) {
   const p = parts(new Date(iso), tz);
   return {
     date: `${p.year}-${p.month}-${p.day}`,
-    time: `${String(+p.hour! % 24).padStart(2, "0")}:${p.minute}`,
-    weekday: p.weekday!,
+    time: `${String(+p.hour % 24).padStart(2, "0")}:${p.minute}`,
+    weekday: p.weekday,
   };
 }
 
-export const isoZ = (d: Date) => d.toISOString().slice(0, 19) + "Z";
+export const isoZ = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
 
 function nextDay(date: string) {
-  const d = new Date(date + "T00:00:00Z");
+  const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }

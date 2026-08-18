@@ -4,11 +4,17 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "prepare": "lefthook install",
     "start": "bun src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "check": "biome check --write ."
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.9",
+    "lefthook": "^2.1.10"
   }
 }
