@@ -1,6 +1,6 @@
 # Req
 
-POST https://api.clockify.me/api/v1/workspaces
+GET https://api.clockify.me/api/v1/workspaces
 
 # Res
 
