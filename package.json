@@ -1,0 +1,14 @@
+{
+  "name": "clockify-mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun src/index.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.4.3"
+  }
+}
