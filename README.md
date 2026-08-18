@@ -44,20 +44,29 @@ There is no build step — bun runs the TypeScript directly.
 
 **3. Register the server with your agent.**
 
-Claude Code — run this from anywhere, `-s user` makes it available in all your projects:
+Claude Code — copy this as-is, from the repo root you just cloned into:
 
 ```sh
-claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- bun /absolute/path/to/src/index.ts
+claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- bun "$PWD/src/index.ts"
 ```
 
-Any other harness (Cursor, VS Code, Zed, Claude Desktop…) — same three things in its MCP config:
+`-s user` writes it to your personal config so it loads in **every** project, not just this one
+(the default scope, `local`, would bind it to this directory). `$PWD` is expanded by your shell
+before `claude` sees it, so the stored path is absolute.
+
+Any other harness (Cursor, VS Code, Zed, Claude Desktop…) — same three things in its MCP config.
+Print the path to paste:
+
+```sh
+echo "$PWD/src/index.ts"
+```
 
 ```json
 {
   "mcpServers": {
     "clockify": {
       "command": "bun",
-      "args": ["/absolute/path/to/src/index.ts"],
+      "args": ["<paste the absolute path here>"],
       "env": { "CLOCKIFY_API_KEY": "<key>" }
     }
   }
@@ -65,7 +74,7 @@ Any other harness (Cursor, VS Code, Zed, Claude Desktop…) — same three thing
 ```
 
 **The path must be absolute**: your agent starts the server from whatever directory it happens to be
-working in.
+working in, not from this repo.
 
 **4. Check it** — in a fresh session:
 
