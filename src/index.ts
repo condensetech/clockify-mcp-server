@@ -35,6 +35,16 @@ server.registerTool(
     title: "List Clockify projects",
     description:
       "Active projects in the user's Clockify workspace, with the ids and names log_time accepts.",
+    outputSchema: z.object({
+      projects: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          // nullish: Clockify omits it, empty-strings it, or nulls it depending on the host
+          clientName: z.string().nullish(),
+        }),
+      ),
+    }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -64,6 +74,26 @@ server.registerTool(
 const LOCAL = "local to the user's Clockify profile timezone";
 const PAGE_SIZE = 200;
 
+/** log_time's input entry — reused in its output so a failed entry echoes what was asked for. */
+const LogEntry = z.object({
+  project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
+  task: z.string().optional().describe("Task name within the project, case-insensitive"),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe(`Day, YYYY-MM-DD, ${LOCAL}`),
+  start: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .describe(`Start time, HH:MM, ${LOCAL}`),
+  end: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .describe(`End time, HH:MM, ${LOCAL}`),
+  description: z.string().optional(),
+  billable: z.boolean().optional().describe("Omit to use the project default"),
+});
+
 server.registerTool(
   "log_time",
   {
@@ -71,29 +101,20 @@ server.registerTool(
     description:
       `Create one or more Clockify time entries. Pass every entry in a single call — one call for a whole week. ` +
       `Dates and times are ${LOCAL}; the server converts them to UTC. You compute the dates.`,
-    inputSchema: z.object({
-      entries: z
-        .array(
-          z.object({
-            project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
-            task: z.string().optional().describe("Task name within the project, case-insensitive"),
-            date: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .describe(`Day, YYYY-MM-DD, ${LOCAL}`),
-            start: z
-              .string()
-              .regex(/^\d{2}:\d{2}$/)
-              .describe(`Start time, HH:MM, ${LOCAL}`),
-            end: z
-              .string()
-              .regex(/^\d{2}:\d{2}$/)
-              .describe(`End time, HH:MM, ${LOCAL}`),
-            description: z.string().optional(),
-            billable: z.boolean().optional().describe("Omit to use the project default"),
-          }),
-        )
-        .min(1),
+    inputSchema: z.object({ entries: z.array(LogEntry).min(1) }),
+    outputSchema: z.object({
+      created: z.array(
+        z.object({
+          id: z.string(),
+          project: z.string(),
+          date: z.string(),
+          start: z.string(),
+          end: z.string(),
+          hours: z.number(),
+        }),
+      ),
+      failed: z.array(LogEntry.extend({ error: z.string() })),
+      totalHours: z.number(),
     }),
     annotations: {
       readOnlyHint: false,
@@ -179,6 +200,22 @@ server.registerTool(
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .describe(`Last day, inclusive, YYYY-MM-DD, ${LOCAL}`),
     }),
+    outputSchema: z.object({
+      entries: z.array(
+        z.object({
+          id: z.string(),
+          project: z.string().nullable(),
+          task: z.string().nullable(),
+          description: z.string(),
+          date: z.string(),
+          start: z.string(),
+          // null on a running timer, which has no end yet
+          end: z.string().nullable(),
+          hours: z.number().nullable(),
+        }),
+      ),
+      totalHours: z.number(),
+    }),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -250,6 +287,10 @@ server.registerTool(
     description:
       "Permanently delete Clockify time entries by id. Get ids from list_time_entries or log_time.",
     inputSchema: z.object({ ids: z.array(z.string()).min(1).describe("Time entry ids") }),
+    outputSchema: z.object({
+      deleted: z.array(z.string()),
+      failed: z.array(z.object({ id: z.string(), error: z.string() })),
+    }),
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
