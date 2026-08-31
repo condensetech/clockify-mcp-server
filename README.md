@@ -1,5 +1,7 @@
 # clockify-mcp-server
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/condensetech-clockify-mcp-server-02xjra)](https://m8ven.ai/mcp/condensetech-clockify-mcp-server-02xjra)
+
 Log your project hours in Clockify by asking your agent, instead of clicking through the web UI.
 
 > "add 4h on ACME every morning this week and 4h on Evil Corp every afternoon"
