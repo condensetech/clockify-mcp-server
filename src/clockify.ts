@@ -1,4 +1,6 @@
-const BASE = process.env.CLOCKIFY_API_BASE ?? "https://api.clockify.me/api/v1";
+// `||` not `??`: an empty env var (`CLOCKIFY_API_BASE=` in .env, or an empty value in a harness
+// config) would otherwise win over the default and make every request 404 or fail to parse.
+const BASE = process.env.CLOCKIFY_API_BASE || "https://api.clockify.me/api/v1";
 
 export async function api(path: string, init?: RequestInit) {
   const key = process.env.CLOCKIFY_API_KEY;
@@ -17,27 +19,44 @@ export async function api(path: string, init?: RequestInit) {
 export type Me = { id: string; activeWorkspace: string; settings: { timeZone: string } };
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
 
-// ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session
+// ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session.
+// Failures are evicted, though: caching a rejection would poison every later call in the session
+// over one dropped wifi packet, and the only cure would be restarting the whole agent.
 let _me: Promise<Me> | undefined;
 export function me(): Promise<Me> {
-  _me ??= api("/user") as Promise<Me>;
+  _me ??= (api("/user") as Promise<Me>).catch((e) => {
+    _me = undefined;
+    throw e;
+  });
   return _me;
 }
 
 export async function workspaceId() {
-  return process.env.CLOCKIFY_WORKSPACE_ID ?? (await me()).activeWorkspace;
+  return process.env.CLOCKIFY_WORKSPACE_ID || (await me()).activeWorkspace;
 }
 
 export async function timeZone() {
-  return (await me()).settings.timeZone;
+  // Intl.DateTimeFormat({ timeZone: undefined }) silently uses the host zone rather than throwing,
+  // which would put every entry at the wrong hour with no error to go on.
+  const tz = (await me()).settings?.timeZone;
+  if (!tz)
+    throw new Error(
+      "No timeZone on your Clockify profile — set it in Clockify → Preferences before logging time.",
+    );
+  return tz;
 }
 
 let _projects: Promise<Project[]> | undefined;
 export function projects(): Promise<Project[]> {
   // ponytail: one page of 200 — paginate if someone actually has more projects than that
-  _projects ??= workspaceId().then(
-    (ws) => api(`/workspaces/${ws}/projects?archived=false&page-size=200`) as Promise<Project[]>,
-  );
+  _projects ??= workspaceId()
+    .then(
+      (ws) => api(`/workspaces/${ws}/projects?archived=false&page-size=200`) as Promise<Project[]>,
+    )
+    .catch((e) => {
+      _projects = undefined;
+      throw e;
+    });
   return _projects;
 }
 
@@ -45,12 +64,17 @@ const _tasks = new Map<string, Promise<{ id: string; name: string }[]>>();
 function tasks(projectId: string) {
   const cached = _tasks.get(projectId);
   if (cached) return cached;
-  const p = workspaceId().then(
-    (ws) =>
-      api(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`) as Promise<
-        { id: string; name: string }[]
-      >,
-  );
+  const p = workspaceId()
+    .then(
+      (ws) =>
+        api(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`) as Promise<
+          { id: string; name: string }[]
+        >,
+    )
+    .catch((e) => {
+      _tasks.delete(projectId);
+      throw e;
+    });
   _tasks.set(projectId, p);
   return p;
 }
@@ -122,6 +146,9 @@ export function utcToLocal(iso: string, tz: string) {
   };
 }
 
+/** Hours are reported to 2dp — raw ms/3600000 prints 3.6666666666666665. */
+export const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export const isoZ = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
 
 function nextDay(date: string) {
@@ -139,5 +166,5 @@ export function interval(date: string, start: string, end: string, tz: string) {
   const s = localToUtc(`${date}T${start}`, tz);
   // ponytail: end < start means an overnight shift — roll to the next local day, nobody logs negative time
   const e = localToUtc(`${end < start ? nextDay(date) : date}T${end}`, tz);
-  return { start: isoZ(s), end: isoZ(e), hours: (e.getTime() - s.getTime()) / 3600000 };
+  return { start: isoZ(s), end: isoZ(e), hours: round2((e.getTime() - s.getTime()) / 3600000) };
 }

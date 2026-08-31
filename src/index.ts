@@ -11,6 +11,7 @@ import {
   projects,
   resolveProject,
   resolveTask,
+  round2,
   timeZone,
   utcToLocal,
   workspaceId,
@@ -134,8 +135,9 @@ server.registerTool(
           );
         }
       }
-      lines.push(`${created.length} created, ${failed.length} failed, ${totalHours}h total`);
-      return ok(lines.join("\n"), { created, failed, totalHours });
+      const total = round2(totalHours);
+      lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);
+      return ok(lines.join("\n"), { created, failed, totalHours: total });
     } catch (e) {
       return fail(e);
     }
@@ -200,12 +202,11 @@ server.registerTool(
           start: s.time,
           end: stop?.time ?? null,
           hours: e.timeInterval.end
-            ? Math.round(
-                ((new Date(e.timeInterval.end).getTime() -
+            ? round2(
+                (new Date(e.timeInterval.end).getTime() -
                   new Date(e.timeInterval.start).getTime()) /
-                  3600000) *
-                  100,
-              ) / 100
+                  3600000,
+              )
             : null,
         };
       });
@@ -219,7 +220,7 @@ server.registerTool(
               } (${e.hours ?? "?"}h) [${e.id}]`,
           )
           .join("\n") || "No entries.";
-      return ok(`${text}\n${Math.round(total * 100) / 100}h total`, { entries, totalHours: total });
+      return ok(`${text}\n${round2(total)}h total`, { entries, totalHours: round2(total) });
     } catch (e) {
       return fail(e);
     }

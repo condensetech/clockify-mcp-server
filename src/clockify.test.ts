@@ -57,4 +57,6 @@ test("interval builds second-precision ISO-Z and hours", () => {
   expect(interval("2026-08-18", "22:00", "02:00", "Europe/Rome").end).toBe("2026-08-19T00:00:00Z");
   // but a zero-length entry is a typo, not a 24-hour shift
   expect(() => interval("2026-08-18", "09:00", "09:00", "Europe/Rome")).toThrow(/zero-length/);
+  // hours are reported to 2dp, not as 1.8333333333333333
+  expect(interval("2026-08-18", "09:00", "10:50", "Europe/Rome").hours).toBe(1.83);
 });
