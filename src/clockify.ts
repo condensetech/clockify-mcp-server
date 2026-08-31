@@ -93,14 +93,23 @@ function parts(d: Date, tz: string) {
   ) as Record<"year" | "month" | "day" | "hour" | "minute" | "second" | "weekday", string>;
 }
 
+/** How far ahead of UTC the zone is at that instant, in ms. */
+function offset(at: Date, tz: string) {
+  const p = parts(at, tz);
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - at.getTime();
+}
+
 /** `localToUtc("2026-08-18T09:00", "Europe/Rome")` → the instant that is 09:00 in Rome. */
 export function localToUtc(local: string, tz: string): Date {
   const d = new Date(`${local}Z`);
   if (Number.isNaN(d.getTime()))
     throw new Error(`Invalid local datetime "${local}" (expected YYYY-MM-DDTHH:MM)`);
-  const p = parts(d, tz);
-  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
-  return new Date(d.getTime() - (asUtc - d.getTime()));
+  // Two passes: the first offset is sampled at the wall time read as UTC, which on a DST
+  // transition day can sit the other side of the jump. Re-sampling at the candidate instant
+  // converges for every real zone. A wall time that does not exist (spring-forward gap) lands
+  // on the instant just after the jump.
+  const first = new Date(d.getTime() - offset(d, tz));
+  return new Date(d.getTime() - offset(first, tz));
 }
 
 /** The inverse: an instant rendered in the profile zone. */
