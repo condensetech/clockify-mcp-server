@@ -34,7 +34,12 @@ server.registerTool(
     title: "List Clockify projects",
     description:
       "Active projects in the user's Clockify workspace, with the ids and names log_time accepts.",
-    annotations: { readOnlyHint: true },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   async () => {
     try {
@@ -89,7 +94,12 @@ server.registerTool(
         )
         .min(1),
     }),
-    annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
   },
   async ({ entries }) => {
     try {
@@ -168,7 +178,12 @@ server.registerTool(
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .describe(`Last day, inclusive, YYYY-MM-DD, ${LOCAL}`),
     }),
-    annotations: { readOnlyHint: true },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   async ({ from, to }) => {
     try {
@@ -234,7 +249,12 @@ server.registerTool(
     description:
       "Permanently delete Clockify time entries by id. Get ids from list_time_entries or log_time.",
     inputSchema: z.object({ ids: z.array(z.string()).min(1).describe("Time entry ids") }),
-    annotations: { destructiveHint: true, idempotentHint: true },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   async ({ ids }) => {
     try {
