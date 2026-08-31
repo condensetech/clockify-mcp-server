@@ -55,6 +55,7 @@ server.registerTool(
 );
 
 const LOCAL = "local to the user's Clockify profile timezone";
+const PAGE_SIZE = 200;
 
 server.registerTool(
   "log_time",
@@ -173,9 +174,19 @@ server.registerTool(
       const { id: userId } = await me();
       const start = isoZ(localToUtc(`${from}T00:00`, tz));
       const end = isoZ(localToUtc(`${to}T23:59:59`, tz));
-      const raw = (await api(
-        `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true&page-size=200`,
-      )) as HydratedEntry[];
+      // Page until a short page comes back, so a wide date range reports a real total instead of
+      // the first 200 entries and a number that is quietly too low. Clockify's `Last-Page` header
+      // would mean plumbing response headers out of api(); a short page is the same signal.
+      // ponytail: 50 pages = 10k entries, a ceiling no timesheet reaches — bounded so a
+      // misbehaving API cannot spin forever
+      const raw: HydratedEntry[] = [];
+      for (let page = 1; page <= 50; page++) {
+        const batch = (await api(
+          `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true&page-size=${PAGE_SIZE}&page=${page}`,
+        )) as HydratedEntry[];
+        raw.push(...batch);
+        if (batch.length < PAGE_SIZE) break;
+      }
 
       const entries = raw.map((e) => {
         const s = utcToLocal(e.timeInterval.start, tz);
