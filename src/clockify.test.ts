@@ -55,4 +55,6 @@ test("interval builds second-precision ISO-Z and hours", () => {
   });
   // overnight rolls to the next local day
   expect(interval("2026-08-18", "22:00", "02:00", "Europe/Rome").end).toBe("2026-08-19T00:00:00Z");
+  // but a zero-length entry is a typo, not a 24-hour shift
+  expect(() => interval("2026-08-18", "09:00", "09:00", "Europe/Rome")).toThrow(/zero-length/);
 });

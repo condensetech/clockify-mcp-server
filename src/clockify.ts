@@ -132,8 +132,12 @@ function nextDay(date: string) {
 
 /** date + HH:MM local → the `{start,end}` a time-entry POST wants, second-precision ISO-Z. */
 export function interval(date: string, start: string, end: string, tz: string) {
+  // A zero-length entry is always a typo, and rolling it to the next day would post 24 billable
+  // hours as a success. Refuse instead of guessing which of the two the caller meant.
+  if (end === start)
+    throw new Error(`Start and end are both "${start}" on ${date} — a zero-length entry.`);
   const s = localToUtc(`${date}T${start}`, tz);
-  // ponytail: end <= start means an overnight shift — roll to the next local day, nobody logs negative time
-  const e = localToUtc(`${end <= start ? nextDay(date) : date}T${end}`, tz);
+  // ponytail: end < start means an overnight shift — roll to the next local day, nobody logs negative time
+  const e = localToUtc(`${end < start ? nextDay(date) : date}T${end}`, tz);
   return { start: isoZ(s), end: isoZ(e), hours: (e.getTime() - s.getTime()) / 3600000 };
 }
