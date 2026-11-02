@@ -40,10 +40,10 @@ test("localToUtc is right on the transition days themselves", () => {
 });
 
 test("pick: exact beats substring, ambiguous throws with candidates", () => {
-  const items = [{ name: "Sinelec" }, { name: "Sinelec Maintenance" }, { name: "Other" }];
-  expect(pick("project", "sinelec", items).name).toBe("Sinelec");
-  expect(pick("project", "maint", items).name).toBe("Sinelec Maintenance");
-  expect(() => pick("project", "sine", items)).toThrow(/Ambiguous.*Sinelec, Sinelec Maintenance/);
+  const items = [{ name: "Acme" }, { name: "Acme Maintenance" }, { name: "Other" }];
+  expect(pick("project", "acme", items).name).toBe("Acme");
+  expect(pick("project", "maint", items).name).toBe("Acme Maintenance");
+  expect(() => pick("project", "acm", items)).toThrow(/Ambiguous.*Acme, Acme Maintenance/);
   expect(() => pick("project", "nope", items)).toThrow(/Unknown/);
 });
 

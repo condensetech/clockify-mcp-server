@@ -3,7 +3,7 @@
 ## Context
 
 The team logs project hours in Clockify by hand. We want each teammate to say
-_"add 4h on Sinelec every morning this week and 4h every afternoon"_ and have Claude
+_"add 4h on Acme every morning this week and 4h every afternoon"_ and have Claude
 write the entries. This repo currently holds only `docs/` (7 markdown files of Clockify
 API samples) — no code.
 
@@ -94,7 +94,7 @@ Verified under bun: Europe/Rome `09:00` → `07:00Z` in August, `08:00Z` in Janu
 
 **2. Bulk-by-default + name resolution.** `log_time` takes an **array** of entries, so
 "every morning and afternoon this week" is _one_ tool call and _one_ approval prompt,
-not ten. `project` accepts the human name ("sinelec"); the server resolves it
+not ten. `project` accepts the human name ("acme"); the server resolves it
 case-insensitively against the cached project list. Ambiguous or unknown → `isError`
 listing the candidate names so Claude can ask, rather than guessing an id.
 
@@ -147,7 +147,7 @@ README.md         where to get the API key, the claude mcp add line
   lose the entries that already landed.
   <!-- ponytail: sequential; add a 5-way pool if anyone logs >50 entries at once -->
 - Returns `structuredContent: { created: [{id, date, start, end, project}], failed: [{...,error}], totalHours }`
-  plus a compact text summary (`Sinelec — Mon 18 Aug 09:00–13:00 (4h)` …) so the user can
+  plus a compact text summary (`Acme — Mon 18 Aug 09:00–13:00 (4h)` …) so the user can
   eyeball it in the transcript.
 
 `list_time_entries` renders times back **in the user's zone** via `Intl.DateTimeFormat`, and
@@ -178,7 +178,7 @@ Add duplicate detection only if it actually bites.
      This is the timezone check; everything else is easy to fix, this one is silent.
    - "show my clockify entries for this week" → the entry with its id.
    - "delete that entry" → gone from the UI.
-4. The real prompt: _"add 4 hour entries for the sinelec project for all of this week in the
+4. The real prompt: _"add 4 hour entries for the acme project for all of this week in the
    morning, and 4 hour entries for all of this week in the afternoon"_ → expect **one**
    `log_time` call with 10 entries, Mon–Fri, and a 40h total in the summary.
 

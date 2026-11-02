@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
+import pkg from "../package.json";
 import {
   api,
   interval,
@@ -17,7 +18,7 @@ import {
   workspaceId,
 } from "./clockify.ts";
 
-const server = new McpServer({ name: "clockify", version: "0.1.0" });
+const server = new McpServer({ name: "clockify", version: pkg.version });
 
 const ok = (text: string, structuredContent: object) => ({
   content: [{ type: "text" as const, text }],
@@ -74,7 +75,7 @@ server.registerTool(
       entries: z
         .array(
           z.object({
-            project: z.string().describe('Project name, case-insensitive (e.g. "sinelec")'),
+            project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
             task: z.string().optional().describe("Task name within the project, case-insensitive"),
             date: z
               .string()

@@ -1,3 +1,4 @@
 node_modules/
 .env
 clockify-mcp
+NOTES.md
