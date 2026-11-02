@@ -21,7 +21,24 @@ export type Project = { id: string; name: string; clientName?: string; archived:
 type Task = { id: string; name: string };
 
 /** Clockify's maximum page-size. */
-export const PAGE_SIZE = 200;
+const PAGE_SIZE = 200;
+
+/**
+ * Every item of a list endpoint. Pages until a short page comes back: Clockify's `Last-Page`
+ * header would mean plumbing response headers out of api(), and a short page is the same signal.
+ */
+export async function all<T>(path: string): Promise<T[]> {
+  const items: T[] = [];
+  // ponytail: 50 pages = 10k items, a ceiling no workspace or timesheet reaches — bounded so a
+  // misbehaving API cannot spin forever
+  for (let page = 1; page <= 50; page++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const batch = await api<T[]>(`${path}${sep}page-size=${PAGE_SIZE}&page=${page}`);
+    items.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return items;
+}
 
 // ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session.
 // Failures are evicted, though: caching a rejection would poison every later call in the session
@@ -58,17 +75,12 @@ export async function timeZone() {
   return tz;
 }
 
-// ponytail: one page — paginate if someone actually has more projects than that
 export const projects = memo(async () =>
-  api<Project[]>(
-    `/workspaces/${await workspaceId()}/projects?archived=false&page-size=${PAGE_SIZE}`,
-  ),
+  all<Project>(`/workspaces/${await workspaceId()}/projects?archived=false`),
 );
 
 const tasks = memo(async (projectId) =>
-  api<Task[]>(
-    `/workspaces/${await workspaceId()}/projects/${projectId}/tasks?page-size=${PAGE_SIZE}`,
-  ),
+  all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
 );
 
 /** Exact case-insensitive match wins; else substring. 0 or >1 → throw with the candidates. */

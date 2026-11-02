@@ -2,13 +2,13 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
 import {
+  all,
   api,
   hoursBetween,
   interval,
   isoZ,
   localToUtc,
   me,
-  PAGE_SIZE,
   projects,
   resolveProject,
   resolveTask,
@@ -231,19 +231,9 @@ export function createServer() {
       const { id: userId } = await me();
       const start = isoZ(localToUtc(`${from}T00:00`, tz));
       const end = isoZ(localToUtc(`${to}T23:59:59`, tz));
-      // Page until a short page comes back, so a wide date range reports a real total instead of
-      // the first 200 entries and a number that is quietly too low. Clockify's `Last-Page` header
-      // would mean plumbing response headers out of api(); a short page is the same signal.
-      // ponytail: 50 pages = 10k entries, a ceiling no timesheet reaches — bounded so a
-      // misbehaving API cannot spin forever
-      const raw: HydratedEntry[] = [];
-      for (let page = 1; page <= 50; page++) {
-        const batch = await api<HydratedEntry[]>(
-          `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true&page-size=${PAGE_SIZE}&page=${page}`,
-        );
-        raw.push(...batch);
-        if (batch.length < PAGE_SIZE) break;
-      }
+      const raw = await all<HydratedEntry>(
+        `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
+      );
 
       const entries = raw.map((e) => {
         const s = utcToLocal(e.timeInterval.start, tz);

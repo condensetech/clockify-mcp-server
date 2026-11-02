@@ -2,28 +2,41 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createServer } from "./server.ts";
 
-// A fake Clockify behind a stubbed fetch: one user in Europe/Rome, two projects, one task.
-// The lookups in clockify.ts are memoised for the process, so this world must not change
-// between tests — vary only the per-test state below.
+// A fake Clockify behind a stubbed fetch: one user in Europe/Rome, 201 projects, 201 tasks on
+// Acme. One more than a page of each, and the ones the tests use by name sit past the first
+// page, so any lookup that stops at page 1 fails. The lookups in clockify.ts are memoised for
+// the process, so this world must not change between tests — vary only the per-test state below.
 const ME = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rome" } };
+const filler = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `Filler ${prefix}${i}` }));
 const PROJECTS = [
   { id: "p1", name: "Acme", archived: false },
+  ...filler("fp", 199).map((p) => ({ ...p, archived: false })),
   { id: "p2", name: "Evil Corp", clientName: "Evil Inc", archived: false },
 ];
-const TASKS = { p1: [{ id: "t1", name: "Design" }] } as Record<string, unknown[]>;
+const TASKS = { p1: [...filler("ft", 200), { id: "t1", name: "Design" }] } as Record<
+  string,
+  unknown[]
+>;
 
 type Call = { method: string; path: string; query: URLSearchParams; body?: unknown };
-let calls: Call[];
-let entryPages: unknown[][];
-let nextId: number;
+let calls: Call[] = [];
+let entryPages: unknown[][] = [];
+let nextId = 1;
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
+/** The slice of `list` that Clockify's page / page-size params ask for; page defaults to 1. */
+function paged(list: unknown[], query: URLSearchParams) {
+  const size = Number(query.get("page-size") ?? 50);
+  const page = Number(query.get("page") ?? 1);
+  return json(list.slice((page - 1) * size, page * size));
+}
 
 function clockify(method: string, path: string, query: URLSearchParams, body: unknown) {
   if (method === "GET" && path === "/user") return json(ME);
-  if (method === "GET" && path === "/workspaces/ws1/projects") return json(PROJECTS);
+  if (method === "GET" && path === "/workspaces/ws1/projects") return paged(PROJECTS, query);
   const tasks = path.match(/^\/workspaces\/ws1\/projects\/(\w+)\/tasks$/);
-  if (method === "GET" && tasks) return json(TASKS[tasks[1]] ?? []);
+  if (method === "GET" && tasks) return paged(TASKS[tasks[1]] ?? [], query);
   if (method === "POST" && path === "/workspaces/ws1/time-entries") {
     if ((body as { description?: string }).description === "reject")
       return new Response("project is archived", { status: 400 });
@@ -79,16 +92,15 @@ const call = (name: string, args: Record<string, unknown> = {}) =>
 const text = (r: Awaited<ReturnType<typeof call>>) =>
   (r.content as { type: string; text: string }[]).map((c) => c.text).join("\n");
 
-test("list_projects returns names, ids and client names", async () => {
+test("list_projects returns every project, past the first page", async () => {
   const r = await call("list_projects");
   expect(r.isError).toBeFalsy();
-  expect(r.structuredContent).toEqual({
-    projects: [
-      { id: "p1", name: "Acme" },
-      { id: "p2", name: "Evil Corp", clientName: "Evil Inc" },
-    ],
-  });
-  expect(text(r)).toBe("Acme\nEvil Corp (Evil Inc)");
+  const { projects } = r.structuredContent as { projects: unknown[] };
+  expect(projects).toHaveLength(201);
+  expect(projects[0]).toEqual({ id: "p1", name: "Acme" });
+  expect(projects[200]).toEqual({ id: "p2", name: "Evil Corp", clientName: "Evil Inc" });
+  expect(text(r)).toStartWith("Acme\nFiller fp0\n");
+  expect(text(r)).toEndWith("\nEvil Corp (Evil Inc)");
 });
 
 test("log_time creates what it can and reports each failure", async () => {
