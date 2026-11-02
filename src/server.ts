@@ -272,15 +272,31 @@ export function createServer() {
     },
     async ({ ids }) => {
       const ws = await workspaceId();
-      const results = await Promise.allSettled(
-        ids.map((id) => api(`/workspaces/${ws}/time-entries/${id}`, { method: "DELETE" })),
-      );
+      const { id: userId } = await me();
       const deleted: DeleteTimeEntriesOutput["deleted"] = [];
       const failed: DeleteTimeEntriesOutput["failed"] = [];
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled") deleted.push(ids[i]);
-        else failed.push({ id: ids[i], error: message(r.reason) });
-      });
+      try {
+        // One request for the whole batch, so a large undo can't run into the rate limit.
+        const list = ids.map(encodeURIComponent).join(",");
+        await api(`/workspaces/${ws}/user/${userId}/time-entries?time-entry-ids=${list}`, {
+          method: "DELETE",
+        });
+        deleted.push(...ids);
+      } catch {
+        // The bulk delete is all-or-nothing: one bad id (or someone else's entry, which this
+        // user-scoped endpoint refuses) fails the batch and deletes nothing. Retry one at a
+        // time to delete what can be and say which ids failed and why.
+        for (const id of ids) {
+          try {
+            await api(`/workspaces/${ws}/time-entries/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+            deleted.push(id);
+          } catch (err) {
+            failed.push({ id, error: message(err) });
+          }
+        }
+      }
       // failures go in the text too: some clients show the model only the text content
       const text = [
         ...failed.map((f) => `FAILED ${f.id}: ${f.error}`),

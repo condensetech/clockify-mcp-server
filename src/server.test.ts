@@ -43,6 +43,13 @@ function clockify(method: string, path: string, query: URLSearchParams, body: un
   }
   if (method === "GET" && path === "/workspaces/ws1/user/u1/time-entries")
     return paged(timeEntries, query);
+  if (method === "DELETE" && path === "/workspaces/ws1/user/u1/time-entries") {
+    // all-or-nothing, like the real bulk delete: one bad id fails the batch
+    const ids = query.get("time-entry-ids")?.split(",") ?? [];
+    return ids.includes("missing")
+      ? new Response("Time entry with ID missing doesn't belong to Workspace", { status: 400 })
+      : json(ids.map((id) => ({ id })));
+  }
   const del = path.match(/^\/workspaces\/ws1\/time-entries\/(\w+)$/);
   if (method === "DELETE" && del)
     return del[1] === "missing"
@@ -222,13 +229,27 @@ test("list_time_entries says so when there is nothing", async () => {
   expect(text(r)).toBe("No entries.\n0h total");
 });
 
-test("delete_time_entries deletes each id and reports the ones that failed", async () => {
+const deletes = () =>
+  calls
+    .filter((c) => c.method === "DELETE")
+    .map((c) => c.query.get("time-entry-ids") ?? c.path.split("/").pop());
+
+test("delete_time_entries deletes every id in one bulk request", async () => {
+  const r = await call("delete_time_entries", { ids: ["a1", "b2", "c3"] });
+  expect(r.structuredContent).toEqual({ deleted: ["a1", "b2", "c3"], failed: [] });
+  expect(text(r)).toBe("Deleted 3, failed 0");
+  expect(deletes()).toEqual(["a1,b2,c3"]);
+});
+
+test("delete_time_entries falls back to one at a time when the bulk request fails", async () => {
   const r = await call("delete_time_entries", { ids: ["a1", "missing", "b2"] });
   expect(r.structuredContent).toEqual({
     deleted: ["a1", "b2"],
     failed: [{ id: "missing", error: expect.stringContaining("404") }],
   });
   expect(text(r)).toMatch(/^FAILED missing: .*404.*\nDeleted 2, failed 1$/);
+  // the rejected batch, then each id on its own
+  expect(deletes()).toEqual(["a1,missing,b2", "a1", "missing", "b2"]);
 });
 
 test("a missing API key comes back as a tool error, not a crash", async () => {
