@@ -44,24 +44,19 @@ Every response from an endpoint that supports these parameters will include a cu
 Refer to the list on what URL to use base on the subdomain and data region settings of your workspace.
 
 - Global - can be used by workspaces with or without subdomain.
-
   - Regular: [https://api.clockify.me/api/v1/file/image](https://api.clockify.me/api/v1/file/image)
   - Reports: [https://reports.api.clockify.me/v1/workspaces/{workspaceId}/reports/detailed](https://reports.api.clockify.me/v1/workspaces/%7BworkspaceId%7D/reports/detailed)
 
 - Regional
-
   - Non-subdomain
-
     - Regular: [https://euc1.clockify.me/api/v1/file/image](https://euc1.clockify.me/api/v1/file/image)
     - Reports: [https://use2.clockify.me/report/v1/workspaces/{workspaceId}/reports/detailed](https://use2.clockify.me/report/v1/workspaces/%7BworkspaceId%7D/reports/detailed)
 
   - Subdomain
-
     - Regular: [https://euc1.clockify.me/api/v1/file/image](https://euc1.clockify.me/api/v1/file/image)
     - Reports: [https://yoursubdomainname.clockify.me/report/v1/workspaces/{workspaceId}/reports/detailed](https://yoursubdomainname.clockify.me/report/v1/workspaces/%7BworkspaceId%7D/reports/detailed)
 
 - Developer
-
   - Regular: [https://developer.clockify.me/api/v1/file/image](https://developer.clockify.me/api/v1/file/image)
   - Reports: [https://developer.clockify.me/report/v1/workspaces/{workspaceId}/reports/detailed](https://developer.clockify.me/report/v1/workspaces/%7BworkspaceId%7D/reports/detailed)
 

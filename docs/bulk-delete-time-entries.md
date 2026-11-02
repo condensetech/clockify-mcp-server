@@ -31,5 +31,8 @@ Checked against the live API (2026-11-02): if any id is bad, the whole request f
 **nothing** is deleted, including the valid ids.
 
 ```json
-{ "message": "Time entry with ID 000000000000000000000000 doesn't belong to Workspace", "code": 501 }
+{
+  "message": "Time entry with ID 000000000000000000000000 doesn't belong to Workspace",
+  "code": 501
+}
 ```
