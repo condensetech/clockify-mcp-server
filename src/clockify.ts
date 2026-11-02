@@ -70,8 +70,6 @@ export function lookups() {
   }
 
   async function timeZone() {
-    // Intl.DateTimeFormat({ timeZone: undefined }) silently uses the host zone rather than
-    // throwing, which would put every entry at the wrong hour with no error to go on.
     const tz = (await me()).settings?.timeZone;
     if (!tz)
       throw new Error(
@@ -110,70 +108,39 @@ export function pick<T extends { name: string }>(kind: string, name: string, ite
   );
 }
 
-const formatters = new Map<string, Intl.DateTimeFormat>();
-
-function parts(d: Date, tz: string) {
-  let fmt = formatters.get(tz);
-  if (!fmt) {
-    fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour12: false,
-      weekday: "short",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    formatters.set(tz, fmt);
-  }
-  return Object.fromEntries(fmt.formatToParts(d).map((x) => [x.type, x.value])) as Record<
-    "year" | "month" | "day" | "hour" | "minute" | "second" | "weekday",
-    string
-  >;
-}
-
-function utcOffsetMs(at: Date, tz: string) {
-  const p = parts(at, tz);
-  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - at.getTime();
-}
-
-export function localToUtc(local: string, tz: string): Date {
-  const wallAsUtc = new Date(`${local}Z`);
-  if (Number.isNaN(wallAsUtc.getTime()))
+export function localToUtc(local: string, tz: string): Temporal.Instant {
+  let wall: Temporal.PlainDateTime;
+  try {
+    wall = Temporal.PlainDateTime.from(local);
+  } catch {
     throw new Error(`Invalid local datetime "${local}" (expected YYYY-MM-DDTHH:MM)`);
-  const firstGuess = new Date(wallAsUtc.getTime() - utcOffsetMs(wallAsUtc, tz));
-  return new Date(wallAsUtc.getTime() - utcOffsetMs(firstGuess, tz));
+  }
+  return wall.toZonedDateTime(tz).toInstant();
 }
 
 export function utcToLocal(iso: string, tz: string) {
-  const p = parts(new Date(iso), tz);
+  const zoned = Temporal.Instant.from(iso).toZonedDateTimeISO(tz);
   return {
-    date: `${p.year}-${p.month}-${p.day}`,
-    time: `${String(+p.hour % 24).padStart(2, "0")}:${p.minute}`,
-    weekday: p.weekday,
+    date: zoned.toPlainDate().toString(),
+    time: zoned.toPlainTime().toString({ smallestUnit: "minute" }),
+    weekday: zoned.toLocaleString("en-US", { weekday: "short" }),
   };
 }
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export const hoursBetween = (start: Date | string, end: Date | string) =>
-  round2((new Date(end).getTime() - new Date(start).getTime()) / 3600000);
+type InstantLike = Temporal.Instant | string;
 
-export const isoZ = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
+export const hoursBetween = (start: InstantLike, end: InstantLike) =>
+  round2(Temporal.Instant.from(start).until(end).total("hours"));
 
-function nextDay(date: string) {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
+export const isoZ = (i: Temporal.Instant) => i.toString({ smallestUnit: "second" });
 
 export function interval(date: string, start: string, end: string, tz: string) {
   if (end === start)
     throw new Error(`Start and end are both "${start}" on ${date} — a zero-length entry.`);
   const s = localToUtc(`${date}T${start}`, tz);
-  const overnight = end < start;
-  const e = localToUtc(`${overnight ? nextDay(date) : date}T${end}`, tz);
+  const endDate = end < start ? Temporal.PlainDate.from(date).add({ days: 1 }).toString() : date;
+  const e = localToUtc(`${endDate}T${end}`, tz);
   return { start: isoZ(s), end: isoZ(e), hours: hoursBetween(s, e) };
 }

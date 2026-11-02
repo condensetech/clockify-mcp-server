@@ -30,7 +30,7 @@ Not supported yet: tags, clients, running timers (start/stop), editing existing 
 
 Everything you need if you just want to log time. Takes about two minutes.
 
-**1. Install [bun](https://bun.sh)** (tested on 1.3.14) and the dependencies:
+**1. Install [bun](https://bun.sh)** (tested on 1.4.4) and the dependencies:
 
 ```sh
 curl -fsSL https://bun.sh/install | bash # install bun if needed
@@ -140,10 +140,6 @@ src/server.test.ts   # each tool end to end: MCP client ↔ server in memory, fa
 docs/                # Clockify API request/response samples
 plans/               # what was built and what was deliberately left out
 ```
-
-The interesting code is `localToUtc` / `interval` in `src/clockify.ts` — a stdlib
-`Intl.DateTimeFormat` round-trip, no date library. Change it and run `bun test`; the DST cases are
-the ones that catch mistakes.
 
 Shipping to someone without bun: `bun build --compile --outfile clockify-mcp src/index.ts` produces
 one self-contained binary to point the harness at instead.
