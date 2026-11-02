@@ -20,17 +20,28 @@ export type Me = { id: string; activeWorkspace: string; settings: { timeZone: st
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
 type Task = { id: string; name: string };
 
+/** Clockify's maximum page-size. */
+export const PAGE_SIZE = 200;
+
 // ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session.
 // Failures are evicted, though: caching a rejection would poison every later call in the session
 // over one dropped wifi packet, and the only cure would be restarting the whole agent.
-let _me: Promise<Me> | undefined;
-export function me(): Promise<Me> {
-  _me ??= api<Me>("/user").catch((e) => {
-    _me = undefined;
-    throw e;
-  });
-  return _me;
+function memo<V>(load: (key: string) => Promise<V>) {
+  const cache = new Map<string, Promise<V>>();
+  return (key = ""): Promise<V> => {
+    let p = cache.get(key);
+    if (!p) {
+      p = load(key).catch((e) => {
+        cache.delete(key);
+        throw e;
+      });
+      cache.set(key, p);
+    }
+    return p;
+  };
 }
+
+export const me = memo(() => api<Me>("/user"));
 
 export async function workspaceId() {
   return process.env.CLOCKIFY_WORKSPACE_ID || (await me()).activeWorkspace;
@@ -47,31 +58,18 @@ export async function timeZone() {
   return tz;
 }
 
-let _projects: Promise<Project[]> | undefined;
-export function projects(): Promise<Project[]> {
-  // ponytail: one page of 200 — paginate if someone actually has more projects than that
-  _projects ??= workspaceId()
-    .then((ws) => api<Project[]>(`/workspaces/${ws}/projects?archived=false&page-size=200`))
-    .catch((e) => {
-      _projects = undefined;
-      throw e;
-    });
-  return _projects;
-}
+// ponytail: one page — paginate if someone actually has more projects than that
+export const projects = memo(async () =>
+  api<Project[]>(
+    `/workspaces/${await workspaceId()}/projects?archived=false&page-size=${PAGE_SIZE}`,
+  ),
+);
 
-const _tasks = new Map<string, Promise<Task[]>>();
-function tasks(projectId: string) {
-  const cached = _tasks.get(projectId);
-  if (cached) return cached;
-  const p = workspaceId()
-    .then((ws) => api<Task[]>(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`))
-    .catch((e) => {
-      _tasks.delete(projectId);
-      throw e;
-    });
-  _tasks.set(projectId, p);
-  return p;
-}
+const tasks = memo(async (projectId) =>
+  api<Task[]>(
+    `/workspaces/${await workspaceId()}/projects/${projectId}/tasks?page-size=${PAGE_SIZE}`,
+  ),
+);
 
 /** Exact case-insensitive match wins; else substring. 0 or >1 → throw with the candidates. */
 export function pick<T extends { name: string }>(kind: string, name: string, items: T[]): T {
@@ -143,6 +141,9 @@ export function utcToLocal(iso: string, tz: string) {
 /** Hours are reported to 2dp — raw ms/3600000 prints 3.6666666666666665. */
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
+export const hoursBetween = (start: Date | string, end: Date | string) =>
+  round2((new Date(end).getTime() - new Date(start).getTime()) / 3600000);
+
 export const isoZ = (d: Date) => `${d.toISOString().slice(0, 19)}Z`;
 
 function nextDay(date: string) {
@@ -160,5 +161,5 @@ export function interval(date: string, start: string, end: string, tz: string) {
   const s = localToUtc(`${date}T${start}`, tz);
   // ponytail: end < start means an overnight shift — roll to the next local day, nobody logs negative time
   const e = localToUtc(`${end < start ? nextDay(date) : date}T${end}`, tz);
-  return { start: isoZ(s), end: isoZ(e), hours: round2((e.getTime() - s.getTime()) / 3600000) };
+  return { start: isoZ(s), end: isoZ(e), hours: hoursBetween(s, e) };
 }

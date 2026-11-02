@@ -3,10 +3,12 @@ import { z } from "zod";
 import pkg from "../package.json";
 import {
   api,
+  hoursBetween,
   interval,
   isoZ,
   localToUtc,
   me,
+  PAGE_SIZE,
   projects,
   resolveProject,
   resolveTask,
@@ -25,10 +27,8 @@ const ok = <S extends z.ZodType<Record<string, unknown>>>(
   content: [{ type: "text" as const, text }],
   structuredContent,
 });
-const fail = (e: unknown) => ({
-  content: [{ type: "text" as const, text: e instanceof Error ? e.message : String(e) }],
-  isError: true,
-});
+// A handler that throws needs no catch: the SDK returns the message as an isError result.
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const ListProjectsOutput = z.object({
   projects: z.array(
@@ -42,24 +42,24 @@ const ListProjectsOutput = z.object({
 });
 
 const LOCAL = "local to the user's Clockify profile timezone";
-const PAGE_SIZE = 200;
+const Day = (what: string) =>
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe(`${what}, YYYY-MM-DD, ${LOCAL}`);
+const Clock = (what: string) =>
+  z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .describe(`${what}, HH:MM, ${LOCAL}`);
 
 /** log_time's input entry — reused in its output so a failed entry echoes what was asked for. */
 const LogEntry = z.object({
   project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
   task: z.string().optional().describe("Task name within the project, case-insensitive"),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .describe(`Day, YYYY-MM-DD, ${LOCAL}`),
-  start: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .describe(`Start time, HH:MM, ${LOCAL}`),
-  end: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .describe(`End time, HH:MM, ${LOCAL}`),
+  date: Day("Day"),
+  start: Clock("Start time"),
+  end: Clock("End time"),
   description: z.string().optional(),
   billable: z.boolean().optional().describe("Omit to use the project default"),
 });
@@ -131,20 +131,16 @@ export function createServer() {
       },
     },
     async () => {
-      try {
-        const list = (await projects()).map((p) => ({
-          id: p.id,
-          name: p.name,
-          clientName: p.clientName,
-        }));
-        return ok(
-          ListProjectsOutput,
-          list.map((p) => `${p.name}${p.clientName ? ` (${p.clientName})` : ""}`).join("\n"),
-          { projects: list },
-        );
-      } catch (e) {
-        return fail(e);
-      }
+      const list = (await projects()).map((p) => ({
+        id: p.id,
+        name: p.name,
+        clientName: p.clientName,
+      }));
+      return ok(
+        ListProjectsOutput,
+        list.map((p) => `${p.name}${p.clientName ? ` (${p.clientName})` : ""}`).join("\n"),
+        { projects: list },
+      );
     },
   );
 
@@ -165,55 +161,51 @@ export function createServer() {
       },
     },
     async ({ entries }) => {
-      try {
-        const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
-        const created: LogTimeOutput["created"] = [];
-        const failed: LogTimeOutput["failed"] = [];
-        const lines: string[] = [];
-        let totalHours = 0;
+      const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
+      const created: LogTimeOutput["created"] = [];
+      const failed: LogTimeOutput["failed"] = [];
+      const lines: string[] = [];
+      let totalHours = 0;
 
-        // ponytail: sequential; add a 5-way pool if anyone logs >50 entries at once
-        for (const e of entries) {
-          try {
-            const project = await resolveProject(e.project);
-            const taskId = e.task ? (await resolveTask(project.id, e.task)).id : undefined;
-            const { start, end, hours } = interval(e.date, e.start, e.end, tz);
-            const res = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
-              method: "POST",
-              body: JSON.stringify({
-                start,
-                end,
-                projectId: project.id,
-                taskId,
-                description: e.description,
-                ...(e.billable === undefined ? {} : { billable: e.billable }),
-              }),
-            });
-            created.push({
-              id: res.id,
-              project: project.name,
-              date: e.date,
-              start: e.start,
-              end: e.end,
-              hours,
-            });
-            totalHours += hours;
-            lines.push(
-              `${project.name} — ${utcToLocal(start, tz).weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
-            );
-          } catch (err) {
-            failed.push({ ...e, error: err instanceof Error ? err.message : String(err) });
-            lines.push(
-              `FAILED ${e.project} ${e.date} ${e.start}–${e.end}: ${err instanceof Error ? err.message : err}`,
-            );
-          }
+      // ponytail: sequential; add a 5-way pool if anyone logs >50 entries at once
+      for (const e of entries) {
+        try {
+          const project = await resolveProject(e.project);
+          const taskId = e.task ? (await resolveTask(project.id, e.task)).id : undefined;
+          const { start, end, hours } = interval(e.date, e.start, e.end, tz);
+          const res = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
+            method: "POST",
+            body: JSON.stringify({
+              start,
+              end,
+              projectId: project.id,
+              taskId,
+              // undefined fields drop out of the JSON, so Clockify applies its own defaults
+              description: e.description,
+              billable: e.billable,
+            }),
+          });
+          created.push({
+            id: res.id,
+            project: project.name,
+            date: e.date,
+            start: e.start,
+            end: e.end,
+            hours,
+          });
+          totalHours += hours;
+          lines.push(
+            `${project.name} — ${utcToLocal(start, tz).weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
+          );
+        } catch (err) {
+          const error = message(err);
+          failed.push({ ...e, error });
+          lines.push(`FAILED ${e.project} ${e.date} ${e.start}–${e.end}: ${error}`);
         }
-        const total = round2(totalHours);
-        lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);
-        return ok(LogTimeOutput, lines.join("\n"), { created, failed, totalHours: total });
-      } catch (e) {
-        return fail(e);
       }
+      const total = round2(totalHours);
+      lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);
+      return ok(LogTimeOutput, lines.join("\n"), { created, failed, totalHours: total });
     },
   );
 
@@ -223,14 +215,8 @@ export function createServer() {
       title: "List time entries",
       description: `List the user's Clockify time entries between two dates (inclusive), ${LOCAL}. Returns entry ids for delete_time_entries.`,
       inputSchema: z.object({
-        from: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe(`First day, YYYY-MM-DD, ${LOCAL}`),
-        to: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe(`Last day, inclusive, YYYY-MM-DD, ${LOCAL}`),
+        from: Day("First day"),
+        to: Day("Last day, inclusive"),
       }),
       outputSchema: ListTimeEntriesOutput,
       annotations: {
@@ -241,62 +227,52 @@ export function createServer() {
       },
     },
     async ({ from, to }) => {
-      try {
-        const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
-        const { id: userId } = await me();
-        const start = isoZ(localToUtc(`${from}T00:00`, tz));
-        const end = isoZ(localToUtc(`${to}T23:59:59`, tz));
-        // Page until a short page comes back, so a wide date range reports a real total instead of
-        // the first 200 entries and a number that is quietly too low. Clockify's `Last-Page` header
-        // would mean plumbing response headers out of api(); a short page is the same signal.
-        // ponytail: 50 pages = 10k entries, a ceiling no timesheet reaches — bounded so a
-        // misbehaving API cannot spin forever
-        const raw: HydratedEntry[] = [];
-        for (let page = 1; page <= 50; page++) {
-          const batch = await api<HydratedEntry[]>(
-            `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true&page-size=${PAGE_SIZE}&page=${page}`,
-          );
-          raw.push(...batch);
-          if (batch.length < PAGE_SIZE) break;
-        }
-
-        const entries = raw.map((e) => {
-          const s = utcToLocal(e.timeInterval.start, tz);
-          const stop = e.timeInterval.end ? utcToLocal(e.timeInterval.end, tz) : undefined;
-          return {
-            id: e.id,
-            project: e.project?.name ?? null,
-            task: e.task?.name ?? null,
-            description: e.description ?? "",
-            date: s.date,
-            start: s.time,
-            end: stop?.time ?? null,
-            hours: e.timeInterval.end
-              ? round2(
-                  (new Date(e.timeInterval.end).getTime() -
-                    new Date(e.timeInterval.start).getTime()) /
-                    3600000,
-                )
-              : null,
-          };
-        });
-        const total = entries.reduce((n, e) => n + (e.hours ?? 0), 0);
-        const text =
-          entries
-            .map(
-              (e) =>
-                `${e.date} ${e.start}–${e.end ?? "running"} ${e.project ?? "no project"}${
-                  e.description ? ` — ${e.description}` : ""
-                } (${e.hours ?? "?"}h) [${e.id}]`,
-            )
-            .join("\n") || "No entries.";
-        return ok(ListTimeEntriesOutput, `${text}\n${round2(total)}h total`, {
-          entries,
-          totalHours: round2(total),
-        });
-      } catch (e) {
-        return fail(e);
+      const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
+      const { id: userId } = await me();
+      const start = isoZ(localToUtc(`${from}T00:00`, tz));
+      const end = isoZ(localToUtc(`${to}T23:59:59`, tz));
+      // Page until a short page comes back, so a wide date range reports a real total instead of
+      // the first 200 entries and a number that is quietly too low. Clockify's `Last-Page` header
+      // would mean plumbing response headers out of api(); a short page is the same signal.
+      // ponytail: 50 pages = 10k entries, a ceiling no timesheet reaches — bounded so a
+      // misbehaving API cannot spin forever
+      const raw: HydratedEntry[] = [];
+      for (let page = 1; page <= 50; page++) {
+        const batch = await api<HydratedEntry[]>(
+          `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true&page-size=${PAGE_SIZE}&page=${page}`,
+        );
+        raw.push(...batch);
+        if (batch.length < PAGE_SIZE) break;
       }
+
+      const entries = raw.map((e) => {
+        const s = utcToLocal(e.timeInterval.start, tz);
+        const stop = e.timeInterval.end ? utcToLocal(e.timeInterval.end, tz) : undefined;
+        return {
+          id: e.id,
+          project: e.project?.name ?? null,
+          task: e.task?.name ?? null,
+          description: e.description ?? "",
+          date: s.date,
+          start: s.time,
+          end: stop?.time ?? null,
+          hours: e.timeInterval.end ? hoursBetween(e.timeInterval.start, e.timeInterval.end) : null,
+        };
+      });
+      const total = entries.reduce((n, e) => n + (e.hours ?? 0), 0);
+      const text =
+        entries
+          .map(
+            (e) =>
+              `${e.date} ${e.start}–${e.end ?? "running"} ${e.project ?? "no project"}${
+                e.description ? ` — ${e.description}` : ""
+              } (${e.hours ?? "?"}h) [${e.id}]`,
+          )
+          .join("\n") || "No entries.";
+      return ok(ListTimeEntriesOutput, `${text}\n${round2(total)}h total`, {
+        entries,
+        totalHours: round2(total),
+      });
     },
   );
 
@@ -316,25 +292,21 @@ export function createServer() {
       },
     },
     async ({ ids }) => {
-      try {
-        const ws = await workspaceId();
-        const deleted: DeleteTimeEntriesOutput["deleted"] = [];
-        const failed: DeleteTimeEntriesOutput["failed"] = [];
-        for (const id of ids) {
-          try {
-            await api(`/workspaces/${ws}/time-entries/${id}`, { method: "DELETE" });
-            deleted.push(id);
-          } catch (err) {
-            failed.push({ id, error: err instanceof Error ? err.message : String(err) });
-          }
+      const ws = await workspaceId();
+      const deleted: DeleteTimeEntriesOutput["deleted"] = [];
+      const failed: DeleteTimeEntriesOutput["failed"] = [];
+      for (const id of ids) {
+        try {
+          await api(`/workspaces/${ws}/time-entries/${id}`, { method: "DELETE" });
+          deleted.push(id);
+        } catch (err) {
+          failed.push({ id, error: message(err) });
         }
-        return ok(DeleteTimeEntriesOutput, `Deleted ${deleted.length}, failed ${failed.length}`, {
-          deleted,
-          failed,
-        });
-      } catch (e) {
-        return fail(e);
       }
+      return ok(DeleteTimeEntriesOutput, `Deleted ${deleted.length}, failed ${failed.length}`, {
+        deleted,
+        failed,
+      });
     },
   );
 
