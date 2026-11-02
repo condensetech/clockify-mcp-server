@@ -131,8 +131,10 @@ _is_ the repo, which is why the harness config above passes the key explicitly.
 
 ```
 src/clockify.ts      # API client, memoised user/project/task lookups, timezone conversion
-src/index.ts         # McpServer + the four tools + stdio wiring
-src/clockify.test.ts # the parts worth testing: DST conversion, name resolution, payload building
+src/server.ts        # createServer(): McpServer + the four tools
+src/index.ts         # stdio wiring — the entry point the harness runs
+src/clockify.test.ts # DST conversion, name resolution, payload building
+src/server.test.ts   # each tool end to end: MCP client ↔ server in memory, fake Clockify fetch
 docs/                # Clockify API request/response samples
 plans/               # what was built and what was deliberately left out
 ```
