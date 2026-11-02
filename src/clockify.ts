@@ -2,7 +2,7 @@
 // config) would otherwise win over the default and make every request 404 or fail to parse.
 const BASE = process.env.CLOCKIFY_API_BASE || "https://api.clockify.me/api/v1";
 
-export async function api(path: string, init?: RequestInit) {
+export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const key = process.env.CLOCKIFY_API_KEY;
   if (!key) throw new Error("CLOCKIFY_API_KEY is not set");
   const res = await fetch(BASE + path, {
@@ -13,18 +13,19 @@ export async function api(path: string, init?: RequestInit) {
     throw new Error(
       `Clockify ${init?.method ?? "GET"} ${path} → ${res.status}: ${await res.text()}`,
     );
-  return res.status === 204 ? null : res.json();
+  return (res.status === 204 ? null : await res.json()) as T;
 }
 
 export type Me = { id: string; activeWorkspace: string; settings: { timeZone: string } };
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
+type Task = { id: string; name: string };
 
 // ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session.
 // Failures are evicted, though: caching a rejection would poison every later call in the session
 // over one dropped wifi packet, and the only cure would be restarting the whole agent.
 let _me: Promise<Me> | undefined;
 export function me(): Promise<Me> {
-  _me ??= (api("/user") as Promise<Me>).catch((e) => {
+  _me ??= api<Me>("/user").catch((e) => {
     _me = undefined;
     throw e;
   });
@@ -50,9 +51,7 @@ let _projects: Promise<Project[]> | undefined;
 export function projects(): Promise<Project[]> {
   // ponytail: one page of 200 — paginate if someone actually has more projects than that
   _projects ??= workspaceId()
-    .then(
-      (ws) => api(`/workspaces/${ws}/projects?archived=false&page-size=200`) as Promise<Project[]>,
-    )
+    .then((ws) => api<Project[]>(`/workspaces/${ws}/projects?archived=false&page-size=200`))
     .catch((e) => {
       _projects = undefined;
       throw e;
@@ -60,17 +59,12 @@ export function projects(): Promise<Project[]> {
   return _projects;
 }
 
-const _tasks = new Map<string, Promise<{ id: string; name: string }[]>>();
+const _tasks = new Map<string, Promise<Task[]>>();
 function tasks(projectId: string) {
   const cached = _tasks.get(projectId);
   if (cached) return cached;
   const p = workspaceId()
-    .then(
-      (ws) =>
-        api(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`) as Promise<
-          { id: string; name: string }[]
-        >,
-    )
+    .then((ws) => api<Task[]>(`/workspaces/${ws}/projects/${projectId}/tasks?page-size=200`))
     .catch((e) => {
       _tasks.delete(projectId);
       throw e;
