@@ -115,13 +115,15 @@ Clockify preferences, everything here follows from it.
 None of this is needed to just use the server.
 
 ```sh
-bun test      # unit tests, no network
-bun run check # biome format + lint, applies fixes
-bun run start # start the server on stdio (needs CLOCKIFY_API_KEY)
+bun test          # unit tests + each tool end to end against a fake Clockify, no network
+bun run typecheck # tsc --noEmit
+bun run check     # biome format + lint, applies fixes
+bun run start     # start the server on stdio (needs CLOCKIFY_API_KEY)
 ```
 
 `bun install` also installs the git hooks (`prepare` → `lefthook install`), so `biome check --write`
-runs on your staged files at commit time and restages what it fixed. Nothing else to set up.
+runs on your staged files at commit time and restages what it fixed, and `typecheck` runs on the
+whole project. CI runs typecheck, tests and `biome ci` on every push. Nothing else to set up.
 
 For local runs, bun auto-loads `.env` from the repo root, so a gitignored
 `CLOCKIFY_API_KEY=<key>` there saves you retyping it. That only works when the working directory
