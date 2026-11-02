@@ -8,14 +8,9 @@ import {
   interval,
   isoZ,
   localToUtc,
-  me,
-  projects,
-  resolveProject,
-  resolveTask,
+  lookups,
   round2,
-  timeZone,
   utcToLocal,
-  workspaceId,
 } from "./clockify.ts";
 
 /** The schema argument is there for the compiler: structuredContent must match what the tool declares. */
@@ -104,9 +99,13 @@ const DeleteTimeEntriesOutput = z.object({
 });
 type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
-/** A fresh server with the four tools registered; index.ts wires it to stdio, tests to memory. */
+/**
+ * A fresh server with the four tools registered and its own lookup cache; index.ts wires it to
+ * stdio, tests to memory.
+ */
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
+  const { me, workspaceId, timeZone, projects, resolveProject, resolveTask } = lookups();
 
   server.registerTool(
     "list_projects",

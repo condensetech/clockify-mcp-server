@@ -42,9 +42,8 @@ export async function all<T>(path: string): Promise<T[]> {
   return items;
 }
 
-// ponytail: memoised for process lifetime, no TTL — a stdio server dies with the session.
-// Failures are evicted, though: caching a rejection would poison every later call in the session
-// over one dropped wifi packet, and the only cure would be restarting the whole agent.
+// Failures are evicted: caching a rejection would poison every later call in the session over one
+// dropped wifi packet, and the only cure would be restarting the whole agent.
 function memo<V>(load: (key: string) => Promise<V>) {
   const cache = new Map<string, Promise<V>>();
   return (key = ""): Promise<V> => {
@@ -60,30 +59,46 @@ function memo<V>(load: (key: string) => Promise<V>) {
   };
 }
 
-export const me = memo(() => api<Me>("/user"));
+/**
+ * The user, project and task lookups, memoised for as long as the returned object lives, with no
+ * TTL. createServer() makes one per server, and a stdio server dies with the session.
+ */
+export function lookups() {
+  const me = memo(() => api<Me>("/user"));
 
-export async function workspaceId() {
-  return process.env.CLOCKIFY_WORKSPACE_ID || (await me()).activeWorkspace;
+  async function workspaceId() {
+    return process.env.CLOCKIFY_WORKSPACE_ID || (await me()).activeWorkspace;
+  }
+
+  async function timeZone() {
+    // Intl.DateTimeFormat({ timeZone: undefined }) silently uses the host zone rather than
+    // throwing, which would put every entry at the wrong hour with no error to go on.
+    const tz = (await me()).settings?.timeZone;
+    if (!tz)
+      throw new Error(
+        "No timeZone on your Clockify profile — set it in Clockify → Preferences before logging time.",
+      );
+    return tz;
+  }
+
+  const projects = memo(async () =>
+    all<Project>(`/workspaces/${await workspaceId()}/projects?archived=false`),
+  );
+
+  const tasks = memo(async (projectId) =>
+    all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
+  );
+
+  return {
+    me,
+    workspaceId,
+    timeZone,
+    projects,
+    resolveProject: async (name: string) => pick("project", name, await projects()),
+    resolveTask: async (projectId: string, name: string) =>
+      pick("task", name, await tasks(projectId)),
+  };
 }
-
-export async function timeZone() {
-  // Intl.DateTimeFormat({ timeZone: undefined }) silently uses the host zone rather than throwing,
-  // which would put every entry at the wrong hour with no error to go on.
-  const tz = (await me()).settings?.timeZone;
-  if (!tz)
-    throw new Error(
-      "No timeZone on your Clockify profile — set it in Clockify → Preferences before logging time.",
-    );
-  return tz;
-}
-
-export const projects = memo(async () =>
-  all<Project>(`/workspaces/${await workspaceId()}/projects?archived=false`),
-);
-
-const tasks = memo(async (projectId) =>
-  all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
-);
 
 /** Exact case-insensitive match wins; else substring. 0 or >1 → throw with the candidates. */
 export function pick<T extends { name: string }>(kind: string, name: string, items: T[]): T {
@@ -95,14 +110,6 @@ export function pick<T extends { name: string }>(kind: string, name: string, ite
   throw new Error(
     `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${candidates || "(none)"}`,
   );
-}
-
-export async function resolveProject(name: string) {
-  return pick("project", name, await projects());
-}
-
-export async function resolveTask(projectId: string, name: string) {
-  return pick("task", name, await tasks(projectId));
 }
 
 // Building a formatter costs ~20x a format call, and parts() runs several times per entry.
