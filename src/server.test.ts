@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createServer } from "./server.ts";
 
 // A fake Clockify behind a stubbed fetch: one user in Europe/Rome, 201 projects, 201 tasks on
 // Acme. One more than a page of each, and the ones the tests use by name sit past the first
-// page, so any lookup that stops at page 1 fails. The lookups in clockify.ts are memoised for
-// the process, so this world must not change between tests — vary only the per-test state below.
+// page, so any lookup that stops at page 1 fails. Every test gets a fresh server, so nothing
+// one test looks up is cached for the next.
 const ME = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rome" } };
 const filler = (prefix: string, n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `Filler ${prefix}${i}` }));
@@ -20,6 +20,7 @@ const TASKS: Record<string, unknown[]> = {
 
 type Call = { method: string; path: string; query: URLSearchParams; body?: unknown };
 let calls: Call[] = [];
+let user: object = ME;
 let timeEntries: unknown[] = [];
 let nextId = 1;
 
@@ -32,7 +33,7 @@ function paged(list: unknown[], query: URLSearchParams) {
 }
 
 function clockify(method: string, path: string, query: URLSearchParams, body: unknown) {
-  if (method === "GET" && path === "/user") return json(ME);
+  if (method === "GET" && path === "/user") return json(user);
   if (method === "GET" && path === "/workspaces/ws1/projects") return paged(PROJECTS, query);
   const tasks = path.match(/^\/workspaces\/ws1\/projects\/(\w+)\/tasks$/);
   if (method === "GET" && tasks) return paged(TASKS[tasks[1]] ?? [], query);
@@ -62,8 +63,7 @@ const realFetch = globalThis.fetch;
 const env = { ...process.env };
 let client: Client;
 
-beforeAll(async () => {
-  process.env.CLOCKIFY_API_KEY = "test-key";
+beforeAll(() => {
   delete process.env.CLOCKIFY_WORKSPACE_ID;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -74,6 +74,19 @@ beforeAll(async () => {
     calls.push({ method, path, query: url.searchParams, body });
     return clockify(method, path, url.searchParams, body);
   }) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = realFetch;
+  process.env = env;
+});
+
+beforeEach(async () => {
+  process.env.CLOCKIFY_API_KEY = "test-key";
+  calls = [];
+  user = ME;
+  timeEntries = [];
+  nextId = 1;
 
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await createServer().connect(serverSide);
@@ -81,16 +94,8 @@ beforeAll(async () => {
   await client.connect(clientSide);
 });
 
-afterAll(async () => {
+afterEach(async () => {
   await client.close();
-  globalThis.fetch = realFetch;
-  process.env = env;
-});
-
-beforeEach(() => {
-  calls = [];
-  timeEntries = [];
-  nextId = 1;
 });
 
 const call = (name: string, args: Record<string, unknown> = {}) =>
@@ -159,12 +164,26 @@ test("log_time creates what it can and reports each failure", async () => {
   expect(posts).toHaveLength(3);
 });
 
-test("log_time rejects malformed input before calling Clockify", async () => {
-  const r = await call("log_time", {
-    entries: [{ project: "Acme", date: "18/08/2026", start: "9:00", end: "10:00" }],
-  });
+const valid = { project: "Acme", date: "2026-08-18", start: "09:00", end: "10:00" };
+
+test.each([
+  ["a day-first date", { date: "18/08/2026" }],
+  ["a day that does not exist", { date: "2026-02-31" }],
+  ["a single-digit hour", { start: "9:00" }],
+  ["an hour past 23", { start: "25:00" }],
+  ["minutes past 59", { end: "10:99" }],
+  ["24:00", { end: "24:00" }],
+  ["seconds", { start: "09:00:00" }],
+])("log_time rejects %s before calling Clockify", async (_, bad) => {
+  const r = await call("log_time", { entries: [{ ...valid, ...bad }] });
   expect(r.isError).toBe(true);
-  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  expect(calls).toHaveLength(0);
+});
+
+test("list_time_entries rejects a day that does not exist before calling Clockify", async () => {
+  const r = await call("list_time_entries", { from: "2026-02-30", to: "2026-03-01" });
+  expect(r.isError).toBe(true);
+  expect(calls).toHaveLength(0);
 });
 
 const entry = (id: string, start: string, end: string | null, extra: object = {}) => ({
@@ -254,13 +273,16 @@ test("delete_time_entries falls back to one at a time when the bulk request fail
 
 test("a missing API key comes back as a tool error, not a crash", async () => {
   process.env.CLOCKIFY_API_KEY = "";
-  try {
-    // Either the workspace lookup trips it (an error result) or the DELETE does (a failed id),
-    // depending on what is already cached — so look for the message anywhere in the result.
-    const r = await call("delete_time_entries", { ids: ["a1"] });
-    expect(JSON.stringify(r)).toContain("CLOCKIFY_API_KEY is not set");
-    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
-  } finally {
-    process.env.CLOCKIFY_API_KEY = "test-key";
-  }
+  const r = await call("delete_time_entries", { ids: ["a1"] });
+  expect(r.isError).toBe(true);
+  expect(text(r)).toContain("CLOCKIFY_API_KEY is not set");
+  expect(calls).toHaveLength(0);
+});
+
+test("log_time refuses to guess a timezone the profile does not have", async () => {
+  user = { ...ME, settings: {} };
+  const r = await call("log_time", { entries: [valid] });
+  expect(r.isError).toBe(true);
+  expect(text(r)).toContain("No timeZone on your Clockify profile");
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
 });
