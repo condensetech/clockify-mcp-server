@@ -34,6 +34,11 @@ Every response from an endpoint that supports these parameters will include a cu
 - **true:** The current page is the final page; no more data is available.
 - **false:** Additional pages can be fetched.
 
+> **Checked against the live API (2026-11-02), not part of Clockify's docs:** the projects, project
+> tasks and user time-entries endpoints take `page-size`, not `pageSize`. `pageSize` is silently
+> ignored and the default of 50 applies. 200 is not a maximum: `page-size=5000` returned 1476 time
+> entries on one page. `Last-Page` was present and accurate on all three.
+
 ## API URLs
 
 Refer to the list on what URL to use base on the subdomain and data region settings of your workspace.

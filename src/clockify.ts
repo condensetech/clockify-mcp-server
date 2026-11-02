@@ -20,12 +20,14 @@ export type Me = { id: string; activeWorkspace: string; settings: { timeZone: st
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
 type Task = { id: string; name: string };
 
-/** Clockify's maximum page-size. */
+/** Items per request. Not a Clockify maximum: it returns up to at least 5000 per page. */
 const PAGE_SIZE = 200;
 
 /**
  * Every item of a list endpoint. Pages until a short page comes back: Clockify's `Last-Page`
  * header would mean plumbing response headers out of api(), and a short page is the same signal.
+ * The param must be `page-size`: Clockify silently ignores `pageSize` (the name its own docs
+ * give) and returns its default of 50, which reads as a short page and stops after page 1.
  */
 export async function all<T>(path: string): Promise<T[]> {
   const items: T[] = [];
