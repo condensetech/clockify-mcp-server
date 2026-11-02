@@ -31,8 +31,8 @@ export async function all<T>(path: string): Promise<T[]> {
   const items: T[] = [];
   // ponytail: 50 pages = 10k items, a ceiling no workspace or timesheet reaches — bounded so a
   // misbehaving API cannot spin forever
+  const sep = path.includes("?") ? "&" : "?";
   for (let page = 1; page <= 50; page++) {
-    const sep = path.includes("?") ? "&" : "?";
     const batch = await api<T[]>(`${path}${sep}page-size=${PAGE_SIZE}&page=${page}`);
     items.push(...batch);
     if (batch.length < PAGE_SIZE) break;
@@ -103,9 +103,13 @@ export async function resolveTask(projectId: string, name: string) {
   return pick("task", name, await tasks(projectId));
 }
 
+// Building a formatter costs ~20x a format call, and parts() runs several times per entry.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 function parts(d: Date, tz: string) {
-  return Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
+  let fmt = formatters.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       hour12: false,
       weekday: "short",
@@ -115,10 +119,13 @@ function parts(d: Date, tz: string) {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    })
-      .formatToParts(d)
-      .map((x) => [x.type, x.value]),
-  ) as Record<"year" | "month" | "day" | "hour" | "minute" | "second" | "weekday", string>;
+    });
+    formatters.set(tz, fmt);
+  }
+  return Object.fromEntries(fmt.formatToParts(d).map((x) => [x.type, x.value])) as Record<
+    "year" | "month" | "day" | "hour" | "minute" | "second" | "weekday",
+    string
+  >;
 }
 
 /** How far ahead of UTC the zone is at that instant, in ms. */

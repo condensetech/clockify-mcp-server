@@ -42,16 +42,8 @@ const ListProjectsOutput = z.object({
 });
 
 const LOCAL = "local to the user's Clockify profile timezone";
-const Day = (what: string) =>
-  z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .describe(`${what}, YYYY-MM-DD, ${LOCAL}`);
-const Clock = (what: string) =>
-  z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .describe(`${what}, HH:MM, ${LOCAL}`);
+const Day = (what: string) => z.iso.date().describe(`${what}, YYYY-MM-DD, ${LOCAL}`);
+const Clock = (what: string) => z.iso.time({ precision: -1 }).describe(`${what}, HH:MM, ${LOCAL}`);
 
 /** log_time's input entry — reused in its output so a failed entry echoes what was asked for. */
 const LogEntry = z.object({
@@ -236,8 +228,8 @@ export function createServer() {
       );
 
       const entries = raw.map((e) => {
-        const s = utcToLocal(e.timeInterval.start, tz);
-        const stop = e.timeInterval.end ? utcToLocal(e.timeInterval.end, tz) : undefined;
+        const { start, end } = e.timeInterval;
+        const s = utcToLocal(start, tz);
         return {
           id: e.id,
           project: e.project?.name ?? null,
@@ -245,11 +237,11 @@ export function createServer() {
           description: e.description ?? "",
           date: s.date,
           start: s.time,
-          end: stop?.time ?? null,
-          hours: e.timeInterval.end ? hoursBetween(e.timeInterval.start, e.timeInterval.end) : null,
+          end: end ? utcToLocal(end, tz).time : null,
+          hours: end ? hoursBetween(start, end) : null,
         };
       });
-      const total = entries.reduce((n, e) => n + (e.hours ?? 0), 0);
+      const total = round2(entries.reduce((n, e) => n + (e.hours ?? 0), 0));
       const text =
         entries
           .map(
@@ -259,10 +251,7 @@ export function createServer() {
               } (${e.hours ?? "?"}h) [${e.id}]`,
           )
           .join("\n") || "No entries.";
-      return ok(ListTimeEntriesOutput, `${text}\n${round2(total)}h total`, {
-        entries,
-        totalHours: round2(total),
-      });
+      return ok(ListTimeEntriesOutput, `${text}\n${total}h total`, { entries, totalHours: total });
     },
   );
 
@@ -283,16 +272,15 @@ export function createServer() {
     },
     async ({ ids }) => {
       const ws = await workspaceId();
+      const results = await Promise.allSettled(
+        ids.map((id) => api(`/workspaces/${ws}/time-entries/${id}`, { method: "DELETE" })),
+      );
       const deleted: DeleteTimeEntriesOutput["deleted"] = [];
       const failed: DeleteTimeEntriesOutput["failed"] = [];
-      for (const id of ids) {
-        try {
-          await api(`/workspaces/${ws}/time-entries/${id}`, { method: "DELETE" });
-          deleted.push(id);
-        } catch (err) {
-          failed.push({ id, error: message(err) });
-        }
-      }
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") deleted.push(ids[i]);
+        else failed.push({ id: ids[i], error: message(r.reason) });
+      });
       // failures go in the text too: some clients show the model only the text content
       const text = [
         ...failed.map((f) => `FAILED ${f.id}: ${f.error}`),

@@ -10,18 +10,17 @@ const ME = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rom
 const filler = (prefix: string, n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `Filler ${prefix}${i}` }));
 const PROJECTS = [
-  { id: "p1", name: "Acme", archived: false },
-  ...filler("fp", 199).map((p) => ({ ...p, archived: false })),
-  { id: "p2", name: "Evil Corp", clientName: "Evil Inc", archived: false },
+  { id: "p1", name: "Acme" },
+  ...filler("fp", 199),
+  { id: "p2", name: "Evil Corp", clientName: "Evil Inc" },
 ];
-const TASKS = { p1: [...filler("ft", 200), { id: "t1", name: "Design" }] } as Record<
-  string,
-  unknown[]
->;
+const TASKS: Record<string, unknown[]> = {
+  p1: [...filler("ft", 200), { id: "t1", name: "Design" }],
+};
 
 type Call = { method: string; path: string; query: URLSearchParams; body?: unknown };
 let calls: Call[] = [];
-let entryPages: unknown[][] = [];
+let timeEntries: unknown[] = [];
 let nextId = 1;
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -43,7 +42,7 @@ function clockify(method: string, path: string, query: URLSearchParams, body: un
     return json({ id: `te${nextId++}` }, 201);
   }
   if (method === "GET" && path === "/workspaces/ws1/user/u1/time-entries")
-    return json(entryPages[Number(query.get("page")) - 1] ?? []);
+    return paged(timeEntries, query);
   const del = path.match(/^\/workspaces\/ws1\/time-entries\/(\w+)$/);
   if (method === "DELETE" && del)
     return del[1] === "missing"
@@ -83,7 +82,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   calls = [];
-  entryPages = [];
+  timeEntries = [];
   nextId = 1;
 });
 
@@ -173,7 +172,7 @@ test("list_time_entries pages until a short page and converts back to local time
   const full = Array.from({ length: 200 }, (_, i) =>
     entry(`e${i}`, "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z"),
   );
-  entryPages = [full, [entry("last", "2026-08-18T07:00:00Z", "2026-08-18T09:15:00Z")]];
+  timeEntries = [...full, entry("last", "2026-08-18T07:00:00Z", "2026-08-18T09:15:00Z")];
 
   const r = await call("list_time_entries", { from: "2026-08-17", to: "2026-08-23" });
   expect(r.isError).toBeFalsy();
@@ -202,11 +201,9 @@ test("list_time_entries pages until a short page and converts back to local time
 });
 
 test("list_time_entries reports a running timer without counting it", async () => {
-  entryPages = [
-    [
-      entry("done", "2026-08-18T07:00:00Z", "2026-08-18T08:00:00Z", { description: "standup" }),
-      entry("running", "2026-08-18T08:00:00Z", null),
-    ],
+  timeEntries = [
+    entry("done", "2026-08-18T07:00:00Z", "2026-08-18T08:00:00Z", { description: "standup" }),
+    entry("running", "2026-08-18T08:00:00Z", null),
   ];
   const r = await call("list_time_entries", { from: "2026-08-18", to: "2026-08-18" });
   expect(r.structuredContent).toMatchObject({
