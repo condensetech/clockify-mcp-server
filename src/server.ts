@@ -4,6 +4,7 @@ import pkg from "../package.json";
 import {
   all,
   api,
+  ClockifyError,
   hoursBetween,
   interval,
   isoZ,
@@ -13,16 +14,10 @@ import {
   utcToLocal,
 } from "./clockify.ts";
 
-/** The schema argument is there for the compiler: structuredContent must match what the tool declares. */
-const ok = <S extends z.ZodType<Record<string, unknown>>>(
-  _schema: S,
-  text: string,
-  structuredContent: z.infer<S>,
-) => ({
+const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
   structuredContent,
 });
-// A handler that throws needs no catch: the SDK returns the message as an isError result.
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const ListProjectsOutput = z.object({
@@ -30,17 +25,16 @@ const ListProjectsOutput = z.object({
     z.object({
       id: z.string(),
       name: z.string(),
-      // nullish: Clockify omits it, empty-strings it, or nulls it depending on the host
       clientName: z.string().nullish(),
     }),
   ),
 });
+type ListProjectsOutput = z.infer<typeof ListProjectsOutput>;
 
 const LOCAL = "local to the user's Clockify profile timezone";
 const Day = (what: string) => z.iso.date().describe(`${what}, YYYY-MM-DD, ${LOCAL}`);
 const Clock = (what: string) => z.iso.time({ precision: -1 }).describe(`${what}, HH:MM, ${LOCAL}`);
 
-/** log_time's input entry — reused in its output so a failed entry echoes what was asked for. */
 const LogEntry = z.object({
   project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
   task: z.string().optional().describe("Task name within the project, case-insensitive"),
@@ -67,7 +61,6 @@ const LogTimeOutput = z.object({
 });
 type LogTimeOutput = z.infer<typeof LogTimeOutput>;
 
-/** `hydrated=true` inlines the project and task objects instead of returning bare ids. */
 type HydratedEntry = {
   id: string;
   description?: string;
@@ -85,13 +78,13 @@ const ListTimeEntriesOutput = z.object({
       description: z.string(),
       date: z.string(),
       start: z.string(),
-      // null on a running timer, which has no end yet
       end: z.string().nullable(),
       hours: z.number().nullable(),
     }),
   ),
   totalHours: z.number(),
 });
+type ListTimeEntriesOutput = z.infer<typeof ListTimeEntriesOutput>;
 
 const DeleteTimeEntriesOutput = z.object({
   deleted: z.array(z.string()),
@@ -99,10 +92,6 @@ const DeleteTimeEntriesOutput = z.object({
 });
 type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
-/**
- * A fresh server with the four tools registered and its own lookup cache; index.ts wires it to
- * stdio, tests to memory.
- */
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
   const { me, workspaceId, timeZone, projects, resolveProject, resolveTask } = lookups();
@@ -127,8 +116,7 @@ export function createServer() {
         name: p.name,
         clientName: p.clientName,
       }));
-      return ok(
-        ListProjectsOutput,
+      return ok<ListProjectsOutput>(
         list.map((p) => `${p.name}${p.clientName ? ` (${p.clientName})` : ""}`).join("\n"),
         { projects: list },
       );
@@ -158,7 +146,6 @@ export function createServer() {
       const lines: string[] = [];
       let totalHours = 0;
 
-      // ponytail: sequential; add a 5-way pool if anyone logs >50 entries at once
       for (const e of entries) {
         try {
           const project = await resolveProject(e.project);
@@ -171,7 +158,6 @@ export function createServer() {
               end,
               projectId: project.id,
               taskId,
-              // undefined fields drop out of the JSON, so Clockify applies its own defaults
               description: e.description,
               billable: e.billable,
             }),
@@ -196,7 +182,7 @@ export function createServer() {
       }
       const total = round2(totalHours);
       lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);
-      return ok(LogTimeOutput, lines.join("\n"), { created, failed, totalHours: total });
+      return ok<LogTimeOutput>(lines.join("\n"), { created, failed, totalHours: total });
     },
   );
 
@@ -250,7 +236,7 @@ export function createServer() {
               } (${e.hours ?? "?"}h) [${e.id}]`,
           )
           .join("\n") || "No entries.";
-      return ok(ListTimeEntriesOutput, `${text}\n${total}h total`, { entries, totalHours: total });
+      return ok<ListTimeEntriesOutput>(`${text}\n${total}h total`, { entries, totalHours: total });
     },
   );
 
@@ -275,16 +261,15 @@ export function createServer() {
       const deleted: DeleteTimeEntriesOutput["deleted"] = [];
       const failed: DeleteTimeEntriesOutput["failed"] = [];
       try {
-        // One request for the whole batch, so a large undo can't run into the rate limit.
         const list = ids.map(encodeURIComponent).join(",");
         await api(`/workspaces/${ws}/user/${userId}/time-entries?time-entry-ids=${list}`, {
           method: "DELETE",
         });
         deleted.push(...ids);
-      } catch {
-        // The bulk delete is all-or-nothing: one bad id (or someone else's entry, which this
-        // user-scoped endpoint refuses) fails the batch and deletes nothing. Retry one at a
-        // time to delete what can be and say which ids failed and why.
+      } catch (err) {
+        if (!(err instanceof ClockifyError && err.status === 400)) throw err;
+        // Clockify's bulk delete is all-or-nothing: one bad id fails the batch and deletes
+        // nothing (docs/bulk-delete-time-entries.md).
         for (const id of ids) {
           try {
             await api(`/workspaces/${ws}/time-entries/${encodeURIComponent(id)}`, {
@@ -296,12 +281,11 @@ export function createServer() {
           }
         }
       }
-      // failures go in the text too: some clients show the model only the text content
       const text = [
         ...failed.map((f) => `FAILED ${f.id}: ${f.error}`),
         `Deleted ${deleted.length}, failed ${failed.length}`,
       ].join("\n");
-      return ok(DeleteTimeEntriesOutput, text, { deleted, failed });
+      return ok<DeleteTimeEntriesOutput>(text, { deleted, failed });
     },
   );
 

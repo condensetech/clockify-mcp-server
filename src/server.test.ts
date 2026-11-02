@@ -1,21 +1,18 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { PAGE_SIZE } from "./clockify.ts";
 import { createServer } from "./server.ts";
 
-// A fake Clockify behind a stubbed fetch: one user in Europe/Rome, 201 projects, 201 tasks on
-// Acme. One more than a page of each, and the ones the tests use by name sit past the first
-// page, so any lookup that stops at page 1 fails. Every test gets a fresh server, so nothing
-// one test looks up is cached for the next.
 const ME = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rome" } };
 const filler = (prefix: string, n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `Filler ${prefix}${i}` }));
 const PROJECTS = [
   { id: "p1", name: "Acme" },
-  ...filler("fp", 199),
+  ...filler("fp", PAGE_SIZE - 1),
   { id: "p2", name: "Evil Corp", clientName: "Evil Inc" },
 ];
 const TASKS: Record<string, unknown[]> = {
-  p1: [...filler("ft", 200), { id: "t1", name: "Design" }],
+  p1: [...filler("ft", PAGE_SIZE), { id: "t1", name: "Design" }],
 };
 
 type Call = { method: string; path: string; query: URLSearchParams; body?: unknown };
@@ -25,11 +22,12 @@ let timeEntries: unknown[] = [];
 let nextId = 1;
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
-/** The slice of `list` that Clockify's page / page-size params ask for; page defaults to 1. */
 function paged(list: unknown[], query: URLSearchParams) {
   const size = Number(query.get("page-size") ?? 50);
   const page = Number(query.get("page") ?? 1);
-  return json(list.slice((page - 1) * size, page * size));
+  return Response.json(list.slice((page - 1) * size, page * size), {
+    headers: { "Last-Page": String(page * size >= list.length) },
+  });
 }
 
 function clockify(method: string, path: string, query: URLSearchParams, body: unknown) {
@@ -45,8 +43,8 @@ function clockify(method: string, path: string, query: URLSearchParams, body: un
   if (method === "GET" && path === "/workspaces/ws1/user/u1/time-entries")
     return paged(timeEntries, query);
   if (method === "DELETE" && path === "/workspaces/ws1/user/u1/time-entries") {
-    // all-or-nothing, like the real bulk delete: one bad id fails the batch
     const ids = query.get("time-entry-ids")?.split(",") ?? [];
+    if (ids.includes("outage")) return new Response("upstream down", { status: 503 });
     return ids.includes("missing")
       ? new Response("Time entry with ID missing doesn't belong to Workspace", { status: 400 })
       : json(ids.map((id) => ({ id })));
@@ -68,7 +66,6 @@ beforeAll(() => {
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
-    // the host and /api/v1 prefix depend on CLOCKIFY_API_BASE; route on what follows
     const path = url.pathname.replace(/^.*?\/api\/v1/, "");
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, path, query: url.searchParams, body });
@@ -145,7 +142,6 @@ test("log_time creates what it can and reports each failure", async () => {
   });
   expect(text(r)).toContain("2 created, 2 failed, 5.5h total");
 
-  // Local Rome times went out as UTC; billable is only sent when the caller set it.
   const posts = calls.filter((c) => c.method === "POST").map((c) => c.body);
   expect(posts[0]).toEqual({
     start: "2026-08-18T07:00:00Z",
@@ -160,7 +156,6 @@ test("log_time creates what it can and reports each failure", async () => {
     description: "review",
     billable: false,
   });
-  // the unknown project never reached the API
   expect(posts).toHaveLength(3);
 });
 
@@ -194,8 +189,8 @@ const entry = (id: string, start: string, end: string | null, extra: object = {}
   ...extra,
 });
 
-test("list_time_entries pages until a short page and converts back to local time", async () => {
-  const full = Array.from({ length: 200 }, (_, i) =>
+test("list_time_entries pages until Last-Page and converts back to local time", async () => {
+  const full = Array.from({ length: PAGE_SIZE }, (_, i) =>
     entry(`e${i}`, "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z"),
   );
   timeEntries = [...full, entry("last", "2026-08-18T07:00:00Z", "2026-08-18T09:15:00Z")];
@@ -221,7 +216,6 @@ test("list_time_entries pages until a short page and converts back to local time
 
   const pages = calls.filter((c) => c.path.endsWith("/time-entries"));
   expect(pages.map((c) => c.query.get("page"))).toEqual(["1", "2"]);
-  // the local day range, Monday 00:00 to Sunday 23:59:59 in Rome, as UTC
   expect(pages[0].query.get("start")).toBe("2026-08-16T22:00:00Z");
   expect(pages[0].query.get("end")).toBe("2026-08-23T21:59:59Z");
 });
@@ -267,8 +261,14 @@ test("delete_time_entries falls back to one at a time when the bulk request fail
     failed: [{ id: "missing", error: expect.stringContaining("404") }],
   });
   expect(text(r)).toMatch(/^FAILED missing: .*404.*\nDeleted 2, failed 1$/);
-  // the rejected batch, then each id on its own
   expect(deletes()).toEqual(["a1,missing,b2", "a1", "missing", "b2"]);
+});
+
+test("delete_time_entries does not retry one at a time when the bulk request fails for another reason", async () => {
+  const r = await call("delete_time_entries", { ids: ["a1", "outage"] });
+  expect(r.isError).toBe(true);
+  expect(text(r)).toContain("503");
+  expect(deletes()).toEqual(["a1,outage"]);
 });
 
 test("a missing API key comes back as a tool error, not a crash", async () => {
