@@ -303,10 +303,12 @@ export function createServer() {
           failed.push({ id, error: message(err) });
         }
       }
-      return ok(DeleteTimeEntriesOutput, `Deleted ${deleted.length}, failed ${failed.length}`, {
-        deleted,
-        failed,
-      });
+      // failures go in the text too: some clients show the model only the text content
+      const text = [
+        ...failed.map((f) => `FAILED ${f.id}: ${f.error}`),
+        `Deleted ${deleted.length}, failed ${failed.length}`,
+      ].join("\n");
+      return ok(DeleteTimeEntriesOutput, text, { deleted, failed });
     },
   );
 

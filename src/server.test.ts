@@ -219,7 +219,7 @@ test("delete_time_entries deletes each id and reports the ones that failed", asy
     deleted: ["a1", "b2"],
     failed: [{ id: "missing", error: expect.stringContaining("404") }],
   });
-  expect(text(r)).toBe("Deleted 2, failed 1");
+  expect(text(r)).toMatch(/^FAILED missing: .*404.*\nDeleted 2, failed 1$/);
 });
 
 test("a missing API key comes back as a tool error, not a crash", async () => {
