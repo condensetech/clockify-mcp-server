@@ -2,27 +2,31 @@
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/condensetech-clockify-mcp-server-02xjra?v=40fa14233279dc9af7289e3d44d963ff)](https://m8ven.ai/mcp/condensetech-clockify-mcp-server-02xjra)
 
-Log your project hours in Clockify by asking your agent, instead of clicking through the web UI.
+Log your Clockify project hours by asking your agent, instead of clicking
+through the UI.
 
 > "add 4h on ACME every morning this week and 4h on Evil Corp every afternoon"
 >
-> → one approval prompt, 10 entries created, 40h total.
+> → one `log_time` call, 10 entries created, 40h total.
 
-A local stdio MCP server. Each person runs it themselves with their own API key — nothing is
-shared or hosted.
+A local stdio MCP server. Run it with your own API key, nothing is shared or
+hosted.
 
-| Tool                  | What it does                                                                           |
-| --------------------- | -------------------------------------------------------------------------------------- |
-| `list_projects`       | Active projects in your workspace                                                      |
-| `log_time`            | Create entries in bulk — project by **name**, `date` + `start`/`end` in **local time** |
-| `list_time_entries`   | Your entries between two dates                                                         |
-| `delete_time_entries` | Delete entries                                                                         |
+| Tool                  | What it does                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `list_projects`       | Active projects in your workspace                                                     |
+| `log_time`            | Create entries in bulk, project by **name**, `date` + `start`/`end` in **local time** |
+| `list_time_entries`   | Your entries between two dates                                                        |
+| `delete_time_entries` | Delete entries                                                                        |
 
-**Times are always local to your Clockify profile timezone.** You say `09:00`, the server reads
-`settings.timeZone` from your Clockify profile and converts to UTC. You never deal with UTC, and
-neither does the agent.
+**Times are local to your Clockify profile timezone**. You say `09:00`, the
+server reads `settings.timeZone` from your Clockify profile and converts to UTC.
 
-Not supported yet: tags, clients, running timers (start/stop), editing existing entries, reports.
+**Approval prompts come from your agent, not from this server**. Whether you are
+asked before each call is up to your harness and its permission settings. The
+server marks the `list_*` tools **read-only** and `delete_time_entries`
+**destructive**, but these are treated as hints: the server enforces no
+authorization of its own. **Anything your API key can do, the tools can too**.
 
 ---
 
@@ -34,30 +38,36 @@ Everything you need if you just want to log time. Takes about two minutes.
 
 ```sh
 curl -fsSL https://bun.sh/install | bash # install bun if needed
-git clone <this-repo> && cd clockify-mcp-server
+git clone https://github.com/condensetech/clockify-mcp-server.git && cd clockify-mcp-server
 bun install
 ```
 
-There is no build step — bun runs the TypeScript directly.
-
-**2. Get your Clockify API key:**
+**2. Get your Clockify API key**:
 
 - Clockify → your avatar → Preferences → **ADVANCED** tab → Manage API keys → **GENERATE NEW**
 
-**3. Register the server with your agent.**
+**3. Register the server with your agent**:
 
-Claude Code — copy this as-is, from the repo root you just cloned into:
+<details>
+<summary><b>Claude Code</b></summary>
+
+From the repo root you just cloned:
 
 ```sh
 claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- bun "$PWD/src/index.ts"
 ```
 
-`-s user` writes it to your personal config so it loads in **every** project, not just this one
-(the default scope, `local`, would bind it to this directory). `$PWD` is expanded by your shell
-before `claude` sees it, so the stored path is absolute.
+`-s user` writes it to your personal config so it loads in **every** project,
+not just the clone (the default scope, `local`, would bind it to that
+directory). `$PWD` is expanded by your shell before `claude` sees it, so the
+stored path is absolute.
 
-Any other harness (Cursor, VS Code, Zed, Claude Desktop…) — same three things in its MCP config.
-Print the path to paste:
+</details>
+
+<details>
+<summary><b>Other harnesses</b> (Cursor, VS Code, Zed, Claude Desktop…)</summary>
+
+Same three things in its MCP config. Print the path to paste:
 
 ```sh
 echo "$PWD/src/index.ts"
@@ -75,10 +85,12 @@ echo "$PWD/src/index.ts"
 }
 ```
 
-**The path must be absolute**: your agent starts the server from whatever directory it happens to be
-working in, not from this repo.
+**The path must be absolute** so your harness starts the server from whatever
+directory it happens to be working in.
 
-**4. Check it** — in a fresh session:
+</details>
+
+**4. Check it** in a fresh session:
 
 ```
 list my clockify projects
@@ -87,9 +99,9 @@ show my clockify entries for this week
 delete that entry
 ```
 
-Open the Clockify web UI after the second prompt and confirm the entry reads **09:00–11:00**. If it
-shows a different time, your Clockify profile timezone is not what you think it is — fix it in
-Clockify preferences, everything here follows from it.
+Open the Clockify UI after the second prompt and confirm the entry reads
+**09:00–11:00**. If it shows a different time, your Clockify profile timezone is
+not what you think it is, fix it in Clockify preferences.
 
 ### Environment
 
@@ -101,18 +113,18 @@ Clockify preferences, everything here follows from it.
 
 ### If something goes wrong
 
-- **`CLOCKIFY_API_KEY is not set`** — the key did not reach the server process. Put it in the
-  harness config's `env`, not in your shell.
-- **`Ambiguous project "x". Candidates: …`** — deliberate. The server refuses to guess an id; use
-  one of the listed names.
-- **404s on every call** — your workspace is on a regional host. Set `CLOCKIFY_API_BASE`.
-- **Entries land at the wrong hour** — check your Clockify profile timezone (see step 4).
+- `CLOCKIFY_API_KEY is not set` — the key did not reach the server process. Put
+  it in the harness config's `env`, not in your shell.
+- `Ambiguous project "x". Candidates: …` — deliberate. The server refuses to
+  guess an id; use one of the listed names.
+- **404s on every call** — your workspace is on a regional host. Set
+  `CLOCKIFY_API_BASE`.
+- **Entries land at the wrong hour** — check your Clockify profile timezone (see
+  step 4 of "Use it").
 
 ---
 
 ## Develop it
-
-None of this is needed to just use the server.
 
 ```sh
 bun test          # unit tests + each tool end to end against a fake Clockify, no network
@@ -122,25 +134,17 @@ bun run ci        # biome ci: the read-only check CI runs
 bun run start     # start the server on stdio (needs CLOCKIFY_API_KEY)
 ```
 
-`bun install` also installs the git hooks (`prepare` → `lefthook install`), so `biome check --write`
-runs on your staged files at commit time and restages what it fixed, and `typecheck` runs on the
-whole project. CI runs typecheck, tests and `biome ci` on every push. Nothing else to set up.
+`bun install` also installs the git hooks (`prepare` → `lefthook install`), so
+`biome check --write` runs on your staged files at commit time and restages what
+it fixed, and `typecheck` runs on the whole project. CI runs typecheck, tests
+and `biome ci` on every push. Nothing else to set up.
 
 For local runs, bun auto-loads `.env` from the repo root, so a gitignored
-`CLOCKIFY_API_KEY=<key>` there saves you retyping it. That only works when the working directory
-_is_ the repo, which is why the harness config above passes the key explicitly.
+`CLOCKIFY_API_KEY=<key>` there saves you retyping it. That only works when the
+working directory _is_ the repo, which is why the harness config above passes
+the key explicitly.
 
-### Layout
+## Shipping to someone without bun
 
-```
-src/clockify.ts      # API client, memoised user/project/task lookups, timezone conversion
-src/server.ts        # createServer(): McpServer + the four tools
-src/index.ts         # stdio wiring — the entry point the harness runs
-src/clockify.test.ts # DST conversion, name resolution, payload building
-src/server.test.ts   # each tool end to end: MCP client ↔ server in memory, fake Clockify fetch
-docs/                # Clockify API request/response samples
-plans/               # what was built and what was deliberately left out
-```
-
-Shipping to someone without bun: `bun build --compile --outfile clockify-mcp src/index.ts` produces
-one self-contained binary to point the harness at instead.
+`bun build --compile --outfile clockify-mcp src/index.ts` produces one
+self-contained binary to point the harness at.
