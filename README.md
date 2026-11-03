@@ -117,7 +117,8 @@ None of this is needed to just use the server.
 ```sh
 bun test          # unit tests + each tool end to end against a fake Clockify, no network
 bun run typecheck # tsc --noEmit
-bun run check     # biome format + lint, applies fixes
+bun run fix       # biome format + lint, applies fixes
+bun run ci        # biome ci: the read-only check CI runs
 bun run start     # start the server on stdio (needs CLOCKIFY_API_KEY)
 ```
 

@@ -8,8 +8,12 @@
     "prepare": "lefthook install",
     "start": "bun src/index.ts",
     "test": "bun test",
-    "check": "biome check --write .",
+    "fix": "biome check --write .",
+    "ci": "biome ci .",
     "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
@@ -17,7 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
-    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@types/bun": "^1.4.4",
     "lefthook": "^2.2.2",
     "typescript": "^7.0.2"
