@@ -6,7 +6,7 @@ Log your project hours in Clockify by asking your agent, instead of clicking thr
 
 > "add 4h on ACME every morning this week and 4h on Evil Corp every afternoon"
 >
-> → one approval prompt, 10 entries created, 40h total.
+> → one `log_time` call, 10 entries created, 40h total.
 
 A local stdio MCP server. Each person runs it themselves with their own API key — nothing is
 shared or hosted.
@@ -22,6 +22,12 @@ shared or hosted.
 `settings.timeZone` from your Clockify profile and converts to UTC. You never deal with UTC, and
 neither does the agent.
 
+**Approval prompts come from your agent, not from this server.** Whether you are asked before each
+call is up to your harness and its permission settings. The server marks the `list_*` tools
+read-only and `delete_time_entries` destructive (MCP tool annotations), which clients may use to
+decide what to ask about, but these are hints: the server enforces no authorization of its own.
+Anything your API key can do, the tools can do.
+
 Not supported yet: tags, clients, running timers (start/stop), editing existing entries, reports.
 
 ---
@@ -34,7 +40,7 @@ Everything you need if you just want to log time. Takes about two minutes.
 
 ```sh
 curl -fsSL https://bun.sh/install | bash # install bun if needed
-git clone <this-repo> && cd clockify-mcp-server
+git clone https://github.com/condensetech/clockify-mcp-server.git && cd clockify-mcp-server
 bun install
 ```
 
