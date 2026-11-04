@@ -98,7 +98,7 @@ _Avoid_: Hours (that is a unit), length, time spent
 **Profile time zone**:
 The time zone set in the user's Clockify profile. Every date and time the user gives or reads here
 is in it.
-_Avoid_: Local timezone (whose: the machine's?), user timezone, server time
+_Avoid_: Local time, local timezone (whose: the machine's?), user timezone, server time
 
 **Entry date**:
 The day, in the profile time zone, on which a time entry starts, even if the entry ends after

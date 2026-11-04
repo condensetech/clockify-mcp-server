@@ -2,7 +2,7 @@
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/condensetech-clockify-mcp-server-02xjra?v=40fa14233279dc9af7289e3d44d963ff)](https://m8ven.ai/mcp/condensetech-clockify-mcp-server-02xjra)
 
-Log your Clockify project hours by asking your agent, instead of clicking
+Log time to your Clockify projects by asking your agent, instead of clicking
 through the UI.
 
 > "add 4h on ACME every morning this week and 4h on Evil Corp every afternoon"
@@ -12,14 +12,14 @@ through the UI.
 A local stdio MCP server. Run it with your own API key, nothing is shared or
 hosted.
 
-| Tool                  | What it does                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------- |
-| `list_projects`       | Active projects in your workspace                                                     |
-| `log_time`            | Create entries in bulk, project by **name**, `date` + `start`/`end` in **local time** |
-| `list_time_entries`   | Your entries between two dates                                                        |
-| `delete_time_entries` | Delete entries                                                                        |
+| Tool                  | What it does                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `list_projects`       | Active projects you can log time to                                                               |
+| `log_time`            | Create entries in bulk, project by **name**, `date` + `start`/`end` in your **profile time zone** |
+| `list_time_entries`   | Your time entries between two dates                                                               |
+| `delete_time_entries` | Delete entries                                                                                    |
 
-**Times are local to your Clockify profile timezone**. You say `09:00`, the
+**Times are in your Clockify profile time zone**. You say `09:00`, the
 server reads `settings.timeZone` from your Clockify profile and converts to UTC.
 
 **Approval prompts come from your agent, not from this server**. Whether you are
@@ -100,7 +100,7 @@ delete that entry
 ```
 
 Open the Clockify UI after the second prompt and confirm the entry reads
-**09:00–11:00**. If it shows a different time, your Clockify profile timezone is
+**09:00–11:00**. If it shows a different time, your Clockify profile time zone is
 not what you think it is, fix it in Clockify preferences.
 
 ### Environment
@@ -119,7 +119,7 @@ not what you think it is, fix it in Clockify preferences.
   guess an id; use one of the listed names.
 - **404s on every call** — your workspace is on a regional host. Set
   `CLOCKIFY_API_BASE`.
-- **Entries land at the wrong hour** — check your Clockify profile timezone (see
+- **Entries land at the wrong hour** — check your Clockify profile time zone (see
   step 4 of "Use it").
 
 ---
