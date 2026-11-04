@@ -30,6 +30,23 @@ function paged(list: unknown[], query: URLSearchParams) {
   });
 }
 
+// Clockify matches an entry's start against [start, end), but with both shifted back by the
+// profile time zone's offset (verified live with Europe/Rome).
+function inShiftedWindow(entries: unknown[], query: URLSearchParams) {
+  const shifted = (key: string) => {
+    const at = Temporal.Instant.from(query.get(key) ?? "");
+    const offset = at.toZonedDateTimeISO(USER.settings.timeZone).offsetNanoseconds;
+    return at.subtract({ nanoseconds: offset });
+  };
+  const [from, to] = [shifted("start"), shifted("end")];
+  return entries.filter((e) => {
+    const start = Temporal.Instant.from(
+      (e as { timeInterval: { start: string } }).timeInterval.start,
+    );
+    return Temporal.Instant.compare(start, from) >= 0 && Temporal.Instant.compare(start, to) < 0;
+  });
+}
+
 function clockify(method: string, path: string, query: URLSearchParams, body: unknown) {
   if (method === "GET" && path === "/user") return json(user);
   if (method === "GET" && path === "/workspaces/ws1/projects") return paged(PROJECTS, query);
@@ -41,7 +58,7 @@ function clockify(method: string, path: string, query: URLSearchParams, body: un
     return json({ id: `te${nextId++}` }, 201);
   }
   if (method === "GET" && path === "/workspaces/ws1/user/u1/time-entries")
-    return paged(timeEntries, query);
+    return paged(inShiftedWindow(timeEntries, query), query);
   if (method === "DELETE" && path === "/workspaces/ws1/user/u1/time-entries") {
     const ids = query.get("time-entry-ids")?.split(",") ?? [];
     if (ids.includes("outage")) return new Response("upstream down", { status: 503 });
@@ -216,8 +233,23 @@ test("list_time_entries pages until Last-Page and converts back to the profile t
 
   const pages = calls.filter((c) => c.path.endsWith("/time-entries"));
   expect(pages.map((c) => c.query.get("page"))).toEqual(["1", "2"]);
-  expect(pages[0].query.get("start")).toBe("2026-08-16T22:00:00Z");
-  expect(pages[0].query.get("end")).toBe("2026-08-23T21:59:59Z");
+});
+
+test("list_time_entries returns exactly the entries whose entry date is in range", async () => {
+  timeEntries = [
+    entry("sunday-before", "2026-08-16T21:30:00Z", "2026-08-16T22:30:00Z"),
+    entry("monday-midnight", "2026-08-16T22:00:00Z", "2026-08-16T23:00:00Z"),
+    entry("sunday-late", "2026-08-23T21:30:00Z", "2026-08-23T22:30:00Z"),
+    entry("sunday-last-second", "2026-08-23T21:59:59Z", "2026-08-23T22:30:00Z"),
+    entry("monday-after", "2026-08-23T22:00:00Z", "2026-08-23T23:00:00Z"),
+  ];
+  const r = await call("list_time_entries", { from: "2026-08-17", to: "2026-08-23" });
+  const { entries } = r.structuredContent as { entries: { id: string; date: string }[] };
+  expect(entries.map((e) => [e.id, e.date])).toEqual([
+    ["monday-midnight", "2026-08-17"],
+    ["sunday-late", "2026-08-23"],
+    ["sunday-last-second", "2026-08-23"],
+  ]);
 });
 
 test("list_time_entries reports a running time entry without counting its duration", async () => {
