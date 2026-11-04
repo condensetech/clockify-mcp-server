@@ -1,18 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
-import {
-  all,
-  api,
-  ClockifyError,
-  hoursBetween,
-  interval,
-  isoZ,
-  lookups,
-  profileTimeToUtc,
-  round2,
-  utcToProfileTime,
-} from "./clockify.ts";
+import { api, ClockifyError, interval, lookups, round2, utcToProfileTime } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
@@ -62,14 +51,6 @@ const LogTimeOutput = z.object({
 });
 type LogTimeOutput = z.infer<typeof LogTimeOutput>;
 
-type HydratedEntry = {
-  id: string;
-  description?: string;
-  project?: { name: string } | null;
-  task?: { name: string } | null;
-  timeInterval: { start: string; end: string | null };
-};
-
 const ListTimeEntriesOutput = z.object({
   entries: z.array(
     z.object({
@@ -95,7 +76,8 @@ type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
-  const { user, workspaceId, timeZone, projects, resolveProject, resolveTask } = lookups();
+  const { user, workspaceId, timeZone, projects, timeEntries, resolveProject, resolveTask } =
+    lookups();
 
   server.registerTool(
     "list_projects",
@@ -205,28 +187,7 @@ export function createServer() {
       },
     },
     async ({ from, to }) => {
-      const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
-      const { id: userId } = await user();
-      const start = isoZ(profileTimeToUtc(`${from}T00:00`, tz));
-      const end = isoZ(profileTimeToUtc(`${to}T23:59:59`, tz));
-      const raw = await all<HydratedEntry>(
-        `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
-      );
-
-      const entries = raw.map((e) => {
-        const { start, end } = e.timeInterval;
-        const s = utcToProfileTime(start, tz);
-        return {
-          id: e.id,
-          project: e.project?.name ?? null,
-          task: e.task?.name ?? null,
-          description: e.description ?? "",
-          date: s.date,
-          start: s.time,
-          end: end ? utcToProfileTime(end, tz).time : null,
-          hours: end ? hoursBetween(start, end) : null,
-        };
-      });
+      const entries = await timeEntries(from, to);
       const total = round2(entries.reduce((n, e) => n + (e.hours ?? 0), 0));
       const text =
         entries
