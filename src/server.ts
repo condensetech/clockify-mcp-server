@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
-import { api, interval, lookups, message, round2, utcToProfileTime } from "./clockify.ts";
+import { lookups, round2 } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
@@ -75,15 +75,7 @@ type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
-  const {
-    workspaceId,
-    timeZone,
-    projects,
-    timeEntries,
-    deleteTimeEntries,
-    resolveProject,
-    resolveTask,
-  } = lookups();
+  const { projects, logTime, timeEntries, deleteTimeEntries } = lookups();
 
   server.registerTool(
     "list_projects",
@@ -129,45 +121,25 @@ export function createServer() {
       },
     },
     async ({ entries }) => {
-      const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
       const created: LogTimeOutput["created"] = [];
       const failed: LogTimeOutput["failed"] = [];
       const lines: string[] = [];
       let totalHours = 0;
 
-      for (const e of entries) {
-        try {
-          const project = await resolveProject(e.project);
-          const taskId = e.task ? (await resolveTask(project.id, e.task)).id : undefined;
-          const { start, end, hours } = interval(e.date, e.start, e.end, tz);
-          const res = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
-            method: "POST",
-            body: JSON.stringify({
-              start,
-              end,
-              projectId: project.id,
-              taskId,
-              description: e.description,
-              billable: e.billable,
-            }),
-          });
-          created.push({
-            id: res.id,
-            project: project.name,
-            date: e.date,
-            start: e.start,
-            end: e.end,
-            hours,
-          });
-          totalHours += hours;
-          lines.push(
-            `${project.name} — ${utcToProfileTime(start, tz).weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
-          );
-        } catch (err) {
-          const error = message(err);
-          failed.push({ ...e, error });
-          lines.push(`FAILED ${e.project} ${e.date} ${e.start}–${e.end}: ${error}`);
+      for (const outcome of await logTime(entries)) {
+        const e = outcome.entry;
+        if ("error" in outcome) {
+          failed.push({ ...e, error: outcome.error });
+          lines.push(`FAILED ${e.project} ${e.date} ${e.start}–${e.end}: ${outcome.error}`);
+          continue;
         }
+        const { id, project, hours } = outcome;
+        created.push({ id, project, date: e.date, start: e.start, end: e.end, hours });
+        totalHours += hours;
+        const weekday = Temporal.PlainDate.from(e.date).toLocaleString("en-US", {
+          weekday: "short",
+        });
+        lines.push(`${project} — ${weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`);
       }
       const total = round2(totalHours);
       lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);

@@ -43,6 +43,20 @@ type HydratedEntry = {
   timeInterval: { start: string; end: string | null };
 };
 
+export type NewTimeEntry = {
+  project: string;
+  task?: string;
+  date: string;
+  start: string;
+  end: string;
+  description?: string;
+  billable?: boolean;
+};
+
+export type LoggedTime =
+  | { entry: NewTimeEntry; id: string; project: string; hours: number }
+  | { entry: NewTimeEntry; error: string };
+
 export const PAGE_SIZE = 200;
 
 export async function all<T>(path: string): Promise<T[]> {
@@ -94,6 +108,33 @@ export function lookups() {
   const tasks = memoSuccesses(async (projectId) =>
     all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
   );
+
+  async function logTime(entries: NewTimeEntry[]): Promise<LoggedTime[]> {
+    const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
+    const outcomes: LoggedTime[] = [];
+    for (const entry of entries) {
+      try {
+        const project = await resolveProject(entry.project);
+        const taskId = entry.task ? (await resolveTask(project.id, entry.task)).id : undefined;
+        const { start, end, hours } = interval(entry.date, entry.start, entry.end, tz);
+        const { id } = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
+          method: "POST",
+          body: JSON.stringify({
+            start,
+            end,
+            projectId: project.id,
+            taskId,
+            description: entry.description,
+            billable: entry.billable,
+          }),
+        });
+        outcomes.push({ entry, id, project: project.name, hours });
+      } catch (err) {
+        outcomes.push({ entry, error: message(err) });
+      }
+    }
+    return outcomes;
+  }
 
   async function timeEntries(from: string, to: string) {
     const [ws, tz, { id: userId }] = await Promise.all([workspaceId(), timeZone(), user()]);
@@ -150,16 +191,18 @@ export function lookups() {
     return { deleted, failed };
   }
 
+  const resolveProject = async (name: string) => pick("project", name, await projects());
+  const resolveTask = async (projectId: string, name: string) =>
+    pick("task", name, await tasks(projectId));
+
   return {
     user,
     workspaceId,
     timeZone,
     projects,
     timeEntries,
+    logTime,
     deleteTimeEntries,
-    resolveProject: async (name: string) => pick("project", name, await projects()),
-    resolveTask: async (projectId: string, name: string) =>
-      pick("task", name, await tasks(projectId)),
   };
 }
 
@@ -189,7 +232,6 @@ export function utcToProfileTime(iso: string, tz: string) {
   return {
     date: zoned.toPlainDate().toString(),
     time: zoned.toPlainTime().toString({ smallestUnit: "minute" }),
-    weekday: zoned.toLocaleString("en-US", { weekday: "short" }),
   };
 }
 
