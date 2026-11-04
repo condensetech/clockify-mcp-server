@@ -38,7 +38,7 @@ type Task = { id: string; name: string };
 type HydratedEntry = {
   id: string;
   description?: string;
-  project?: { name: string } | null;
+  project?: { name: string; clientName?: string } | null;
   task?: { name: string } | null;
   timeInterval: { start: string; end: string | null };
 };
@@ -152,6 +152,7 @@ export function clockify() {
       return {
         id: e.id,
         project: e.project?.name ?? null,
+        client: e.project?.clientName || null,
         task: e.task?.name ?? null,
         description: e.description ?? "",
         date: s.date,
@@ -202,6 +203,9 @@ export function clockify() {
     deleteTimeEntries,
   };
 }
+
+export const projectLabel = (name: string, client?: string | null) =>
+  client ? `${name} (${client})` : name;
 
 export function pick<T extends { name: string }>(kind: string, name: string, items: T[]): T {
   const n = name.trim().toLowerCase();
