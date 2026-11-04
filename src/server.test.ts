@@ -3,7 +3,7 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { PAGE_SIZE } from "./clockify.ts";
 import { createServer } from "./server.ts";
 
-const ME = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rome" } };
+const USER = { id: "u1", activeWorkspace: "ws1", settings: { timeZone: "Europe/Rome" } };
 const filler = (prefix: string, n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `Filler ${prefix}${i}` }));
 const PROJECTS = [
@@ -17,7 +17,7 @@ const TASKS: Record<string, unknown[]> = {
 
 type Call = { method: string; path: string; query: URLSearchParams; body?: unknown };
 let calls: Call[] = [];
-let user: object = ME;
+let user: object = USER;
 let timeEntries: unknown[] = [];
 let nextId = 1;
 
@@ -81,7 +81,7 @@ afterAll(() => {
 beforeEach(async () => {
   process.env.CLOCKIFY_API_KEY = "test-key";
   calls = [];
-  user = ME;
+  user = USER;
   timeEntries = [];
   nextId = 1;
 
@@ -163,7 +163,7 @@ const valid = { project: "Acme", date: "2026-08-18", start: "09:00", end: "10:00
 
 test.each([
   ["a day-first date", { date: "18/08/2026" }],
-  ["a day that does not exist", { date: "2026-02-31" }],
+  ["a date that does not exist", { date: "2026-02-31" }],
   ["a single-digit hour", { start: "9:00" }],
   ["an hour past 23", { start: "25:00" }],
   ["minutes past 59", { end: "10:99" }],
@@ -175,7 +175,7 @@ test.each([
   expect(calls).toHaveLength(0);
 });
 
-test("list_time_entries rejects a day that does not exist before calling Clockify", async () => {
+test("list_time_entries rejects a date that does not exist before calling Clockify", async () => {
   const r = await call("list_time_entries", { from: "2026-02-30", to: "2026-03-01" });
   expect(r.isError).toBe(true);
   expect(calls).toHaveLength(0);
@@ -189,7 +189,7 @@ const entry = (id: string, start: string, end: string | null, extra: object = {}
   ...extra,
 });
 
-test("list_time_entries pages until Last-Page and converts back to local time", async () => {
+test("list_time_entries pages until Last-Page and converts back to the profile time zone", async () => {
   const full = Array.from({ length: PAGE_SIZE }, (_, i) =>
     entry(`e${i}`, "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z"),
   );
@@ -220,7 +220,7 @@ test("list_time_entries pages until Last-Page and converts back to local time", 
   expect(pages[0].query.get("end")).toBe("2026-08-23T21:59:59Z");
 });
 
-test("list_time_entries reports a running timer without counting it", async () => {
+test("list_time_entries reports a running time entry without counting its duration", async () => {
   timeEntries = [
     entry("done", "2026-08-18T07:00:00Z", "2026-08-18T08:00:00Z", { description: "standup" }),
     entry("running", "2026-08-18T08:00:00Z", null),
@@ -279,10 +279,10 @@ test("a missing API key comes back as a tool error, not a crash", async () => {
   expect(calls).toHaveLength(0);
 });
 
-test("log_time refuses to guess a timezone the profile does not have", async () => {
-  user = { ...ME, settings: {} };
+test("log_time refuses to guess a time zone the profile does not have", async () => {
+  user = { ...USER, settings: {} };
   const r = await call("log_time", { entries: [valid] });
   expect(r.isError).toBe(true);
-  expect(text(r)).toContain("No timeZone on your Clockify profile");
+  expect(text(r)).toContain("No time zone on your Clockify profile");
   expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
 });

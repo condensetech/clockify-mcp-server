@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
-import { interval, localToUtc, pick, utcToLocal } from "./clockify.ts";
+import { interval, pick, profileTimeToUtc, utcToProfileTime } from "./clockify.ts";
 
-test("localToUtc handles DST", () => {
-  expect(localToUtc("2026-08-18T09:00", "Europe/Rome").toString()).toBe("2026-08-18T07:00:00Z");
-  expect(localToUtc("2026-01-18T09:00", "Europe/Rome").toString()).toBe("2026-01-18T08:00:00Z");
-  expect(utcToLocal("2026-08-18T07:00:00Z", "Europe/Rome")).toMatchObject({
+test("profileTimeToUtc handles DST", () => {
+  expect(profileTimeToUtc("2026-08-18T09:00", "Europe/Rome").toString()).toBe(
+    "2026-08-18T07:00:00Z",
+  );
+  expect(profileTimeToUtc("2026-01-18T09:00", "Europe/Rome").toString()).toBe(
+    "2026-01-18T08:00:00Z",
+  );
+  expect(utcToProfileTime("2026-08-18T07:00:00Z", "Europe/Rome")).toMatchObject({
     date: "2026-08-18",
     time: "09:00",
   });
@@ -15,31 +19,37 @@ test.each([
   ["after Rome springs forward", "2026-03-29T04:00", "Europe/Rome", "2026-03-29T02:00:00Z"],
   ["after Rome falls back", "2026-10-25T04:00", "Europe/Rome", "2026-10-25T03:00:00Z"],
   [
-    "local midnight on Auckland's spring-forward day",
+    "midnight on Auckland's spring-forward day",
     "2026-09-27T00:00",
     "Pacific/Auckland",
     "2026-09-26T12:00:00Z",
   ],
   [
-    "local midnight on Auckland's fall-back day",
+    "midnight on Auckland's fall-back day",
     "2026-04-05T00:00",
     "Pacific/Auckland",
     "2026-04-04T11:00:00Z",
   ],
-])("localToUtc is right %s", (_, local, tz, utc) => {
-  expect(localToUtc(local, tz).toString()).toBe(utc);
+])("profileTimeToUtc is right %s", (_, dateTime, tz, utc) => {
+  expect(profileTimeToUtc(dateTime, tz).toString()).toBe(utc);
 });
 
 test("a wall time inside the spring-forward gap moves forward by the gap", () => {
-  expect(localToUtc("2026-03-29T02:30", "Europe/Rome").toString()).toBe("2026-03-29T01:30:00Z");
+  expect(profileTimeToUtc("2026-03-29T02:30", "Europe/Rome").toString()).toBe(
+    "2026-03-29T01:30:00Z",
+  );
 });
 
 test("a repeated wall time at fall-back resolves to its first occurrence", () => {
-  expect(localToUtc("2026-10-25T02:30", "Europe/Rome").toString()).toBe("2026-10-25T00:30:00Z");
+  expect(profileTimeToUtc("2026-10-25T02:30", "Europe/Rome").toString()).toBe(
+    "2026-10-25T00:30:00Z",
+  );
 });
 
-test("localToUtc rejects a date that does not exist", () => {
-  expect(() => localToUtc("2026-02-30T09:00", "Europe/Rome")).toThrow(/Invalid local datetime/);
+test("profileTimeToUtc rejects a date that does not exist", () => {
+  expect(() => profileTimeToUtc("2026-02-30T09:00", "Europe/Rome")).toThrow(
+    /Invalid date and time/,
+  );
 });
 
 test("interval loses an hour across spring-forward", () => {
@@ -66,7 +76,7 @@ test("interval builds second-precision ISO-Z and hours", () => {
   });
 });
 
-test("interval rolls an end before the start to the next local day", () => {
+test("interval rolls an end before the start to the next day", () => {
   expect(interval("2026-08-18", "22:00", "02:00", "Europe/Rome").end).toBe("2026-08-19T00:00:00Z");
 });
 

@@ -30,7 +30,7 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
-export type Me = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
+export type User = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
 type Task = { id: string; name: string };
 
@@ -63,17 +63,17 @@ function memoSuccesses<V>(load: (key: string) => Promise<V>) {
 }
 
 export function lookups() {
-  const me = memoSuccesses(() => api<Me>("/user"));
+  const user = memoSuccesses(() => api<User>("/user"));
 
   async function workspaceId() {
-    return configured("CLOCKIFY_WORKSPACE_ID") ?? (await me()).activeWorkspace;
+    return configured("CLOCKIFY_WORKSPACE_ID") ?? (await user()).activeWorkspace;
   }
 
   async function timeZone() {
-    const tz = (await me()).settings?.timeZone;
+    const tz = (await user()).settings?.timeZone;
     if (!tz)
       throw new Error(
-        "No timeZone on your Clockify profile — set it in Clockify → Preferences before logging time.",
+        "No time zone on your Clockify profile — set it in Clockify → Preferences before logging time.",
       );
     return tz;
   }
@@ -87,7 +87,7 @@ export function lookups() {
   );
 
   return {
-    me,
+    user,
     workspaceId,
     timeZone,
     projects,
@@ -108,17 +108,17 @@ export function pick<T extends { name: string }>(kind: string, name: string, ite
   );
 }
 
-export function localToUtc(local: string, tz: string): Temporal.Instant {
+export function profileTimeToUtc(dateTime: string, tz: string): Temporal.Instant {
   let wall: Temporal.PlainDateTime;
   try {
-    wall = Temporal.PlainDateTime.from(local);
+    wall = Temporal.PlainDateTime.from(dateTime);
   } catch {
-    throw new Error(`Invalid local datetime "${local}" (expected YYYY-MM-DDTHH:MM)`);
+    throw new Error(`Invalid date and time "${dateTime}" (expected YYYY-MM-DDTHH:MM)`);
   }
   return wall.toZonedDateTime(tz).toInstant();
 }
 
-export function utcToLocal(iso: string, tz: string) {
+export function utcToProfileTime(iso: string, tz: string) {
   const zoned = Temporal.Instant.from(iso).toZonedDateTimeISO(tz);
   return {
     date: zoned.toPlainDate().toString(),
@@ -139,8 +139,8 @@ export const isoZ = (i: Temporal.Instant) => i.toString({ smallestUnit: "second"
 export function interval(date: string, start: string, end: string, tz: string) {
   if (end === start)
     throw new Error(`Start and end are both "${start}" on ${date} — a zero-length entry.`);
-  const s = localToUtc(`${date}T${start}`, tz);
+  const s = profileTimeToUtc(`${date}T${start}`, tz);
   const endDate = end < start ? Temporal.PlainDate.from(date).add({ days: 1 }).toString() : date;
-  const e = localToUtc(`${endDate}T${end}`, tz);
+  const e = profileTimeToUtc(`${endDate}T${end}`, tz);
   return { start: isoZ(s), end: isoZ(e), hours: hoursBetween(s, e) };
 }

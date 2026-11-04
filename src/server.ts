@@ -8,10 +8,10 @@ import {
   hoursBetween,
   interval,
   isoZ,
-  localToUtc,
   lookups,
+  profileTimeToUtc,
   round2,
-  utcToLocal,
+  utcToProfileTime,
 } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
@@ -31,14 +31,15 @@ const ListProjectsOutput = z.object({
 });
 type ListProjectsOutput = z.infer<typeof ListProjectsOutput>;
 
-const LOCAL = "local to the user's Clockify profile timezone";
-const Day = (what: string) => z.iso.date().describe(`${what}, YYYY-MM-DD, ${LOCAL}`);
-const Clock = (what: string) => z.iso.time({ precision: -1 }).describe(`${what}, HH:MM, ${LOCAL}`);
+const IN_PROFILE_TIME_ZONE = "in the user's Clockify profile time zone";
+const Day = (what: string) => z.iso.date().describe(`${what}, YYYY-MM-DD, ${IN_PROFILE_TIME_ZONE}`);
+const Clock = (what: string) =>
+  z.iso.time({ precision: -1 }).describe(`${what}, HH:MM, ${IN_PROFILE_TIME_ZONE}`);
 
-const LogEntry = z.object({
+const NewTimeEntry = z.object({
   project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
   task: z.string().optional().describe("Task name within the project, case-insensitive"),
-  date: Day("Day"),
+  date: Day("Entry date: the day the entry starts"),
   start: Clock("Start time"),
   end: Clock("End time"),
   description: z.string().optional(),
@@ -56,7 +57,7 @@ const LogTimeOutput = z.object({
       hours: z.number(),
     }),
   ),
-  failed: z.array(LogEntry.extend({ error: z.string() })),
+  failed: z.array(NewTimeEntry.extend({ error: z.string() })),
   totalHours: z.number(),
 });
 type LogTimeOutput = z.infer<typeof LogTimeOutput>;
@@ -94,14 +95,14 @@ type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
-  const { me, workspaceId, timeZone, projects, resolveProject, resolveTask } = lookups();
+  const { user, workspaceId, timeZone, projects, resolveProject, resolveTask } = lookups();
 
   server.registerTool(
     "list_projects",
     {
       title: "List Clockify projects",
       description:
-        "Active projects in the user's Clockify workspace, with the ids and names log_time accepts.",
+        "Active projects the user can log time to in their Clockify workspace, with the ids and names log_time accepts.",
       outputSchema: ListProjectsOutput,
       annotations: {
         readOnlyHint: true,
@@ -129,8 +130,8 @@ export function createServer() {
       title: "Log time entries",
       description:
         `Create one or more Clockify time entries. Pass every entry in a single call — one call for a whole week. ` +
-        `Dates and times are ${LOCAL}; the server converts them to UTC. You compute the dates.`,
-      inputSchema: z.object({ entries: z.array(LogEntry).min(1) }),
+        `Dates and times are ${IN_PROFILE_TIME_ZONE}; the server converts them to UTC. You compute the dates.`,
+      inputSchema: z.object({ entries: z.array(NewTimeEntry).min(1) }),
       outputSchema: LogTimeOutput,
       annotations: {
         readOnlyHint: false,
@@ -172,7 +173,7 @@ export function createServer() {
           });
           totalHours += hours;
           lines.push(
-            `${project.name} — ${utcToLocal(start, tz).weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
+            `${project.name} — ${utcToProfileTime(start, tz).weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
           );
         } catch (err) {
           const error = message(err);
@@ -190,10 +191,10 @@ export function createServer() {
     "list_time_entries",
     {
       title: "List time entries",
-      description: `List the user's Clockify time entries between two dates (inclusive), ${LOCAL}. Returns entry ids for delete_time_entries.`,
+      description: `List the user's Clockify time entries whose entry date falls between two dates (inclusive), ${IN_PROFILE_TIME_ZONE}. Returns entry ids for delete_time_entries.`,
       inputSchema: z.object({
-        from: Day("First day"),
-        to: Day("Last day, inclusive"),
+        from: Day("First entry date"),
+        to: Day("Last entry date, inclusive"),
       }),
       outputSchema: ListTimeEntriesOutput,
       annotations: {
@@ -205,16 +206,16 @@ export function createServer() {
     },
     async ({ from, to }) => {
       const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
-      const { id: userId } = await me();
-      const start = isoZ(localToUtc(`${from}T00:00`, tz));
-      const end = isoZ(localToUtc(`${to}T23:59:59`, tz));
+      const { id: userId } = await user();
+      const start = isoZ(profileTimeToUtc(`${from}T00:00`, tz));
+      const end = isoZ(profileTimeToUtc(`${to}T23:59:59`, tz));
       const raw = await all<HydratedEntry>(
         `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
       );
 
       const entries = raw.map((e) => {
         const { start, end } = e.timeInterval;
-        const s = utcToLocal(start, tz);
+        const s = utcToProfileTime(start, tz);
         return {
           id: e.id,
           project: e.project?.name ?? null,
@@ -222,7 +223,7 @@ export function createServer() {
           description: e.description ?? "",
           date: s.date,
           start: s.time,
-          end: end ? utcToLocal(end, tz).time : null,
+          end: end ? utcToProfileTime(end, tz).time : null,
           hours: end ? hoursBetween(start, end) : null,
         };
       });
@@ -257,7 +258,7 @@ export function createServer() {
     },
     async ({ ids }) => {
       const ws = await workspaceId();
-      const { id: userId } = await me();
+      const { id: userId } = await user();
       const deleted: DeleteTimeEntriesOutput["deleted"] = [];
       const failed: DeleteTimeEntriesOutput["failed"] = [];
       try {
