@@ -1,5 +1,7 @@
 ## How to work here
 
+Rule for this server: keep a small set of tools the agent can combine. A new tool or input has to do something the existing ones can't.
+
 - `bun test`, `bun run typecheck`, `bun run fix` — all three must pass; the pre-commit hook runs
   biome and typecheck.
 - `src/server.test.ts` stubs `fetch` with a fake Clockify (user in Europe/Rome, 203 projects and
