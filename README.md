@@ -1,6 +1,6 @@
 # clockify-mcp-server
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/condensetech-clockify-mcp-server-02xjra?v=40fa14233279dc9af7289e3d44d963ff)](https://m8ven.ai/mcp/condensetech-clockify-mcp-server-02xjra)
+[![M8ven Score](https://m8ven.ai/badge/mcp/condensetech-clockify-mcp-server-02xjra)](https://m8ven.ai/mcp/condensetech-clockify-mcp-server-02xjra?s=readme)
 
 Log time to your Clockify projects by asking your agent, instead of clicking
 through the UI.
