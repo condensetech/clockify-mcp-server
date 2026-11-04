@@ -68,6 +68,23 @@ test("pick: exact beats substring, ambiguous throws with candidates", () => {
   expect(() => pick("project", "nope", items)).toThrow(/Unknown/);
 });
 
+test("pick: lists at most 10 candidates, closest names first, and says what to do next", () => {
+  const items = [
+    ...Array.from({ length: 20 }, (_, i) => ({ name: `Filler ${i}` })),
+    { name: "Website" },
+  ];
+  const next = { ambiguous: "pass client", unknown: "call list_projects" };
+  expect(() => pick("project", "websit", [...items, { name: "Websites" }], { next })).toThrow(
+    'Ambiguous project "websit". Candidates: Website, Websites — pass client',
+  );
+  expect(() => pick("project", "webiste", items, { next })).toThrow(
+    /^Unknown project "webiste"\. Candidates: Website, (Filler \d+, ){8}Filler \d+ …and 11 more — call list_projects$/,
+  );
+  expect(() => pick("task", "nope", [{ name: "Design" }])).toThrow(
+    'Unknown task "nope". Candidates: Design',
+  );
+});
+
 test("interval builds second-precision ISO-Z and hours", () => {
   expect(interval("2026-08-18", "09:00", "13:00", "Europe/Rome")).toEqual({
     start: "2026-08-18T07:00:00Z",
