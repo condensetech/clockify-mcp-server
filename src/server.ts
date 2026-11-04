@@ -26,6 +26,10 @@ const Clock = (what: string) =>
 
 const NewTimeEntry = z.object({
   project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
+  client: z
+    .string()
+    .optional()
+    .describe("Client name, case-insensitive; needed when several projects share the name"),
   task: z.string().optional().describe("Task name within the project, case-insensitive"),
   date: Day("Entry date: the day the entry starts"),
   start: Clock("Start time"),
@@ -39,6 +43,7 @@ const LogTimeOutput = z.object({
     z.object({
       id: z.string(),
       project: z.string(),
+      client: z.string().nullable(),
       date: z.string(),
       start: z.string(),
       end: z.string(),
@@ -131,16 +136,20 @@ export function createServer() {
         const e = outcome.entry;
         if ("error" in outcome) {
           failed.push({ ...e, error: outcome.error });
-          lines.push(`FAILED ${e.project} ${e.date} ${e.start}–${e.end}: ${outcome.error}`);
+          lines.push(
+            `FAILED ${projectLabel(e.project, e.client)} ${e.date} ${e.start}–${e.end}: ${outcome.error}`,
+          );
           continue;
         }
-        const { id, project, hours } = outcome;
-        created.push({ id, project, date: e.date, start: e.start, end: e.end, hours });
+        const { id, project, client, hours } = outcome;
+        created.push({ id, project, client, date: e.date, start: e.start, end: e.end, hours });
         totalHours += hours;
         const weekday = Temporal.PlainDate.from(e.date).toLocaleString("en-US", {
           weekday: "short",
         });
-        lines.push(`${project} — ${weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`);
+        lines.push(
+          `${projectLabel(project, client)} — ${weekday} ${e.date} ${e.start}–${e.end} (${hours}h)`,
+        );
       }
       const total = round2(totalHours);
       lines.push(`${created.length} created, ${failed.length} failed, ${total}h total`);

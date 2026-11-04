@@ -12,12 +12,12 @@ through the UI.
 A local stdio MCP server. Run it with your own API key, nothing is shared or
 hosted.
 
-| Tool                  | What it does                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| `list_projects`       | Active projects you can log time to                                                               |
-| `log_time`            | Create entries in bulk, project by **name**, `date` + `start`/`end` in your **profile time zone** |
-| `list_time_entries`   | Your time entries between two dates                                                               |
-| `delete_time_entries` | Delete entries                                                                                    |
+| Tool                  | What it does                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `list_projects`       | Active projects you can log time to                                                                                            |
+| `log_time`            | Create entries in bulk, project by **name** (and client if names repeat), `date` + `start`/`end` in your **profile time zone** |
+| `list_time_entries`   | Your time entries between two dates                                                                                            |
+| `delete_time_entries` | Delete entries                                                                                                                 |
 
 **Times are in your Clockify profile time zone**. You say `09:00`, the
 server reads `settings.timeZone` from your Clockify profile and converts to UTC.
@@ -116,7 +116,8 @@ not what you think it is, fix it in Clockify preferences.
 - `CLOCKIFY_API_KEY is not set` — the key did not reach the server process. Put
   it in the harness config's `env`, not in your shell.
 - `Ambiguous project "x". Candidates: …` — deliberate. The server refuses to
-  guess an id; use one of the listed names.
+  guess an id; use one of the listed names. Projects with the same name under
+  different clients are listed as `Name (Client)`: name the client too.
 - **404s on every call** — your workspace is on a regional host. Set
   `CLOCKIFY_API_BASE`.
 - **Entries land at the wrong hour** — check your Clockify profile time zone (see

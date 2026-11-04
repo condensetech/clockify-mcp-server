@@ -45,6 +45,7 @@ type HydratedEntry = {
 
 type NewTimeEntry = {
   project: string;
+  client?: string;
   task?: string;
   date: string;
   start: string;
@@ -54,7 +55,7 @@ type NewTimeEntry = {
 };
 
 type LoggedTime =
-  | { entry: NewTimeEntry; id: string; project: string; hours: number }
+  | { entry: NewTimeEntry; id: string; project: string; client: string | null; hours: number }
   | { entry: NewTimeEntry; error: string };
 
 export const PAGE_SIZE = 200;
@@ -114,7 +115,7 @@ export function clockify() {
     const outcomes: LoggedTime[] = [];
     for (const entry of entries) {
       try {
-        const project = await resolveProject(entry.project);
+        const project = await resolveProject(entry.project, entry.client);
         const taskId = entry.task ? (await resolveTask(project.id, entry.task)).id : undefined;
         const { start, end, hours } = interval(entry.date, entry.start, entry.end, tz);
         const { id } = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
@@ -128,7 +129,13 @@ export function clockify() {
             billable: entry.billable,
           }),
         });
-        outcomes.push({ entry, id, project: project.name, hours });
+        outcomes.push({
+          entry,
+          id,
+          project: project.name,
+          client: project.clientName || null,
+          hours,
+        });
       } catch (err) {
         outcomes.push({ entry, error: message(err) });
       }
@@ -192,7 +199,19 @@ export function clockify() {
     return { deleted, failed };
   }
 
-  const resolveProject = async (name: string) => pick("project", name, await projects());
+  async function resolveProject(name: string, client?: string) {
+    let list = await projects();
+    if (client) {
+      const clients = [...new Set(list.flatMap((p) => (p.clientName ? [p.clientName] : [])))];
+      const { name: clientName } = pick(
+        "client",
+        client,
+        clients.map((name) => ({ name })),
+      );
+      list = list.filter((p) => p.clientName === clientName);
+    }
+    return pick("project", name, list, (p) => projectLabel(p.name, p.clientName));
+  }
   const resolveTask = async (projectId: string, name: string) =>
     pick("task", name, await tasks(projectId));
 
@@ -207,12 +226,17 @@ export function clockify() {
 export const projectLabel = (name: string, client?: string | null) =>
   client ? `${name} (${client})` : name;
 
-export function pick<T extends { name: string }>(kind: string, name: string, items: T[]): T {
+export function pick<T extends { name: string }>(
+  kind: string,
+  name: string,
+  items: T[],
+  label = (item: T) => item.name,
+): T {
   const n = name.trim().toLowerCase();
   const exact = items.filter((i) => i.name.toLowerCase() === n);
   const hits = exact.length ? exact : items.filter((i) => i.name.toLowerCase().includes(n));
   if (hits.length === 1) return hits[0];
-  const candidates = (hits.length ? hits : items).map((i) => i.name).join(", ");
+  const candidates = (hits.length ? hits : items).map(label).join(", ");
   throw new Error(
     `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${candidates || "(none)"}`,
   );

@@ -10,6 +10,8 @@ const PROJECTS = [
   { id: "p1", name: "Acme" },
   ...filler("fp", PAGE_SIZE - 1),
   { id: "p2", name: "Evil Corp", clientName: "Evil Inc" },
+  { id: "p3", name: "Sales", clientName: "Acme Ltd" },
+  { id: "p4", name: "Sales", clientName: "Evil Inc" },
 ];
 const TASKS: Record<string, unknown[]> = {
   p1: [...filler("ft", PAGE_SIZE), { id: "t1", name: "Design" }],
@@ -121,11 +123,11 @@ test("list_projects returns every project, past the first page", async () => {
   const r = await call("list_projects");
   expect(r.isError).toBeFalsy();
   const { projects } = r.structuredContent as { projects: unknown[] };
-  expect(projects).toHaveLength(201);
+  expect(projects).toHaveLength(203);
   expect(projects[0]).toEqual({ id: "p1", name: "Acme" });
   expect(projects[200]).toEqual({ id: "p2", name: "Evil Corp", clientName: "Evil Inc" });
   expect(text(r)).toStartWith("Acme\nFiller fp0\n");
-  expect(text(r)).toEndWith("\nEvil Corp (Evil Inc)");
+  expect(text(r)).toEndWith("\nEvil Corp (Evil Inc)\nSales (Acme Ltd)\nSales (Evil Inc)");
 });
 
 test("log_time creates what it can and reports each failure", async () => {
@@ -177,6 +179,33 @@ test("log_time creates what it can and reports each failure", async () => {
 });
 
 const valid = { project: "Acme", date: "2026-08-18", start: "09:00", end: "10:00" };
+
+test("log_time tells projects with the same name apart by their client", async () => {
+  const r = await call("log_time", { entries: [{ ...valid, project: "sales", client: "evil" }] });
+  expect(r.structuredContent).toMatchObject({
+    created: [{ id: "te1", project: "Sales", client: "Evil Inc", hours: 1 }],
+    failed: [],
+  });
+  expect(text(r)).toContain("Sales (Evil Inc) — Tue 2026-08-18 09:00–10:00 (1h)");
+  const posts = calls.filter((c) => c.method === "POST").map((c) => c.body);
+  expect(posts).toEqual([expect.objectContaining({ projectId: "p4" })]);
+});
+
+test("log_time names each candidate's client when the project is ambiguous or the client unknown", async () => {
+  const r = await call("log_time", {
+    entries: [
+      { ...valid, project: "Sales" },
+      { ...valid, project: "Sales", client: "nobody" },
+    ],
+  });
+  const { failed } = r.structuredContent as { failed: { error: string }[] };
+  expect(failed.map((f) => f.error)).toEqual([
+    'Ambiguous project "Sales". Candidates: Sales (Acme Ltd), Sales (Evil Inc)',
+    'Unknown client "nobody". Candidates: Evil Inc, Acme Ltd',
+  ]);
+  expect(text(r)).toContain("FAILED Sales (nobody) 2026-08-18");
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+});
 
 test.each([
   ["a day-first date", { date: "18/08/2026" }],
