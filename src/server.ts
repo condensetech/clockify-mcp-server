@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
-import { lookups, round2 } from "./clockify.ts";
+import { clockify, round2 } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
@@ -75,7 +75,7 @@ type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
-  const { projects, logTime, timeEntries, deleteTimeEntries } = lookups();
+  const { projects, logTime, timeEntries, deleteTimeEntries } = clockify();
 
   server.registerTool(
     "list_projects",
