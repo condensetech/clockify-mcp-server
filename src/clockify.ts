@@ -109,18 +109,27 @@ export function clockify({
     all<Task>(`/workspaces/${(await user()).activeWorkspace}/projects/${projectId}/tasks`),
   );
 
-  async function resolveProject(name: string, client?: string) {
+  async function resolveProject(project: string, client?: string) {
     let list = await projects();
+    const byId = list.find((p) => p.id === project.trim());
+    if (byId) return byId;
     if (client) {
       const clients = [...new Set(list.flatMap((p) => (p.clientName ? [p.clientName] : [])))];
       const { name: clientName } = pick(
         "client",
         client,
         clients.map((name) => ({ name })),
+        { next: { unknown: "call list_projects" } },
       );
       list = list.filter((p) => p.clientName === clientName);
     }
-    return pick("project", name, list, (p) => projectLabel(p.name, p.clientName));
+    return pick("project", project, list, {
+      label: (p) => projectLabel(p.name, p.clientName),
+      next: {
+        ambiguous: "pass client, or the project id from list_projects",
+        unknown: "call list_projects",
+      },
+    });
   }
 
   async function logTime(entries: NewTimeEntry[]): Promise<LoggedTime[]> {
@@ -229,20 +238,43 @@ export function clockify({
 export const projectLabel = (name: string, client?: string | null) =>
   client ? `${name} (${client})` : name;
 
+const MAX_CANDIDATES = 10;
+
 export function pick<T extends { name: string }>(
   kind: string,
   name: string,
   items: T[],
-  label = (item: T) => item.name,
+  {
+    label = (item: T) => item.name,
+    next = {},
+  }: { label?: (item: T) => string; next?: { ambiguous?: string; unknown?: string } } = {},
 ): T {
   const n = name.trim().toLowerCase();
   const exact = items.filter((i) => i.name.toLowerCase() === n);
   const hits = exact.length ? exact : items.filter((i) => i.name.toLowerCase().includes(n));
   if (hits.length === 1) return hits[0];
-  const candidates = (hits.length ? hits : items).map(label).join(", ");
+  const closest = (hits.length ? hits : items)
+    .map((item) => ({ item, distance: editDistance(n, item.name.toLowerCase()) }))
+    .sort((a, b) => a.distance - b.distance)
+    .map(({ item }) => label(item));
+  const rest = closest.length - MAX_CANDIDATES;
+  const nextStep = hits.length ? next.ambiguous : next.unknown;
   throw new Error(
-    `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${candidates || "(none)"}`,
+    `${hits.length ? "Ambiguous" : "Unknown"} ${kind} "${name}". Candidates: ${
+      closest.slice(0, MAX_CANDIDATES).join(", ") || "(none)"
+    }${rest > 0 ? ` …and ${rest} more` : ""}${nextStep ? ` — ${nextStep}` : ""}`,
   );
+}
+
+function editDistance(a: string, b: string) {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const prev = row;
+    row = [i];
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return row[b.length];
 }
 
 export function profileTimeToUtc(dateTime: string, tz: string): Temporal.Instant {

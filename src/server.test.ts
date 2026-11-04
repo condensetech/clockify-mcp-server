@@ -192,11 +192,30 @@ test("log_time names each candidate's client when the project is ambiguous or th
   });
   const { failed } = r.structuredContent as { failed: { error: string }[] };
   expect(failed.map((f) => f.error)).toEqual([
-    'Ambiguous project "Sales". Candidates: Sales (Acme Ltd), Sales (Evil Inc)',
-    'Unknown client "nobody". Candidates: Evil Inc, Acme Ltd',
+    'Ambiguous project "Sales". Candidates: Sales (Acme Ltd), Sales (Evil Inc) — pass client, or the project id from list_projects',
+    'Unknown client "nobody". Candidates: Evil Inc, Acme Ltd — call list_projects',
   ]);
   expect(text(r)).toContain("FAILED Sales (nobody) 2026-08-18");
   expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+});
+
+test("log_time accepts a project id from list_projects in place of its name", async () => {
+  const r = await call("log_time", { entries: [{ ...valid, project: "p4" }] });
+  expect(r.structuredContent).toMatchObject({
+    created: [{ project: "Sales", client: "Evil Inc" }],
+    failed: [],
+  });
+  const posts = calls.filter((c) => c.method === "POST").map((c) => c.body);
+  expect(posts).toEqual([expect.objectContaining({ projectId: "p4" })]);
+});
+
+test("log_time lists only the 10 closest projects when none matches", async () => {
+  const r = await call("log_time", { entries: [{ ...valid, project: "Evil Crop" }] });
+  const { failed } = r.structuredContent as { failed: { error: string }[] };
+  expect(failed[0].error).toStartWith(
+    'Unknown project "Evil Crop". Candidates: Evil Corp (Evil Inc), ',
+  );
+  expect(failed[0].error).toEndWith(" …and 193 more — call list_projects");
 });
 
 test.each([

@@ -118,8 +118,9 @@ another, switch to it in Clockify.
 - `CLOCKIFY_API_KEY is not set` — the key did not reach the server process. Put
   it in the harness config's `env`, not in your shell.
 - `Ambiguous project "x". Candidates: …` — deliberate. The server refuses to
-  guess an id; use one of the listed names. Projects with the same name under
-  different clients are listed as `Name (Client)`: name the client too.
+  guess; use one of the listed names. Projects with the same name under
+  different clients are listed as `Name (Client)`: name the client too, or pass
+  the project id from `list_projects`.
 - **404s on every call** — your workspace is on a regional host. Set
   `CLOCKIFY_API_BASE`.
 - **Entries land at the wrong hour** — check your Clockify profile time zone (see

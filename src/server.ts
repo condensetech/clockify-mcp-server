@@ -25,7 +25,9 @@ const Clock = (what: string) =>
   z.iso.time({ precision: -1 }).describe(`${what}, HH:MM, ${IN_PROFILE_TIME_ZONE}`);
 
 const NewTimeEntry = z.object({
-  project: z.string().describe('Project name, case-insensitive (e.g. "acme")'),
+  project: z
+    .string()
+    .describe('Project name, case-insensitive (e.g. "acme"), or its id from list_projects'),
   client: z
     .string()
     .optional()
