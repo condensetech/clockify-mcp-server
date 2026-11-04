@@ -1,13 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
-import { api, ClockifyError, interval, lookups, round2, utcToProfileTime } from "./clockify.ts";
+import { api, interval, lookups, message, round2, utcToProfileTime } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
   structuredContent,
 });
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const ListProjectsOutput = z.object({
   projects: z.array(
@@ -76,8 +75,15 @@ type DeleteTimeEntriesOutput = z.infer<typeof DeleteTimeEntriesOutput>;
 
 export function createServer() {
   const server = new McpServer({ name: "clockify", version: pkg.version });
-  const { user, workspaceId, timeZone, projects, timeEntries, resolveProject, resolveTask } =
-    lookups();
+  const {
+    workspaceId,
+    timeZone,
+    projects,
+    timeEntries,
+    deleteTimeEntries,
+    resolveProject,
+    resolveTask,
+  } = lookups();
 
   server.registerTool(
     "list_projects",
@@ -218,31 +224,7 @@ export function createServer() {
       },
     },
     async ({ ids }) => {
-      const ws = await workspaceId();
-      const { id: userId } = await user();
-      const deleted: DeleteTimeEntriesOutput["deleted"] = [];
-      const failed: DeleteTimeEntriesOutput["failed"] = [];
-      try {
-        const list = ids.map(encodeURIComponent).join(",");
-        await api(`/workspaces/${ws}/user/${userId}/time-entries?time-entry-ids=${list}`, {
-          method: "DELETE",
-        });
-        deleted.push(...ids);
-      } catch (err) {
-        if (!(err instanceof ClockifyError && err.status === 400)) throw err;
-        // Clockify's bulk delete is all-or-nothing: one bad id fails the batch and deletes
-        // nothing (docs/bulk-delete-time-entries.md).
-        for (const id of ids) {
-          try {
-            await api(`/workspaces/${ws}/time-entries/${encodeURIComponent(id)}`, {
-              method: "DELETE",
-            });
-            deleted.push(id);
-          } catch (err) {
-            failed.push({ id, error: message(err) });
-          }
-        }
-      }
+      const { deleted, failed } = await deleteTimeEntries(ids);
       const text = [
         ...failed.map((f) => `FAILED ${f.id}: ${f.error}`),
         `Deleted ${deleted.length}, failed ${failed.length}`,

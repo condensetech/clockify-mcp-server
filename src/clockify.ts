@@ -2,6 +2,8 @@ const configured = (name: string) => process.env[name] || undefined;
 
 const BASE = configured("CLOCKIFY_API_BASE") ?? "https://api.clockify.me/api/v1";
 
+export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export class ClockifyError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -120,12 +122,41 @@ export function lookups() {
     return entries.filter((e) => e.date >= from && e.date <= to);
   }
 
+  async function deleteTimeEntries(ids: string[]) {
+    const [ws, { id: userId }] = await Promise.all([workspaceId(), user()]);
+    const deleted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    try {
+      const list = ids.map(encodeURIComponent).join(",");
+      await api(`/workspaces/${ws}/user/${userId}/time-entries?time-entry-ids=${list}`, {
+        method: "DELETE",
+      });
+      deleted.push(...ids);
+    } catch (err) {
+      if (!(err instanceof ClockifyError && err.status === 400)) throw err;
+      // Clockify's bulk delete is all-or-nothing: one bad id fails the batch and deletes
+      // nothing (docs/bulk-delete-time-entries.md).
+      for (const id of ids) {
+        try {
+          await api(`/workspaces/${ws}/time-entries/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+          });
+          deleted.push(id);
+        } catch (err) {
+          failed.push({ id, error: message(err) });
+        }
+      }
+    }
+    return { deleted, failed };
+  }
+
   return {
     user,
     workspaceId,
     timeZone,
     projects,
     timeEntries,
+    deleteTimeEntries,
     resolveProject: async (name: string) => pick("project", name, await projects()),
     resolveTask: async (projectId: string, name: string) =>
       pick("task", name, await tasks(projectId)),
