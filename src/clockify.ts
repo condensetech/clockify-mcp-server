@@ -2,9 +2,9 @@ const configured = (name: string) => process.env[name] || undefined;
 
 const BASE = configured("CLOCKIFY_API_BASE") ?? "https://api.clockify.me/api/v1";
 
-export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export class ClockifyError extends Error {
+class ClockifyError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
     super(message);
@@ -27,13 +27,13 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-export async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await request(path, init);
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
-export type User = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
-export type Project = { id: string; name: string; clientName?: string; archived: boolean };
+type User = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
+type Project = { id: string; name: string; clientName?: string; archived: boolean };
 type Task = { id: string; name: string };
 type HydratedEntry = {
   id: string;
@@ -43,7 +43,7 @@ type HydratedEntry = {
   timeInterval: { start: string; end: string | null };
 };
 
-export type NewTimeEntry = {
+type NewTimeEntry = {
   project: string;
   task?: string;
   date: string;
@@ -53,13 +53,13 @@ export type NewTimeEntry = {
   billable?: boolean;
 };
 
-export type LoggedTime =
+type LoggedTime =
   | { entry: NewTimeEntry; id: string; project: string; hours: number }
   | { entry: NewTimeEntry; error: string };
 
 export const PAGE_SIZE = 200;
 
-export async function all<T>(path: string): Promise<T[]> {
+async function all<T>(path: string): Promise<T[]> {
   const items: T[] = [];
   const sep = path.includes("?") ? "&" : "?";
   for (let page = 1; ; page++) {
@@ -85,7 +85,7 @@ function memoSuccesses<V>(load: (key: string) => Promise<V>) {
   };
 }
 
-export function lookups() {
+export function clockify() {
   const user = memoSuccesses(() => api<User>("/user"));
 
   async function workspaceId() {
@@ -196,9 +196,6 @@ export function lookups() {
     pick("task", name, await tasks(projectId));
 
   return {
-    user,
-    workspaceId,
-    timeZone,
     projects,
     timeEntries,
     logTime,
@@ -239,10 +236,10 @@ export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 type InstantLike = Temporal.Instant | string;
 
-export const hoursBetween = (start: InstantLike, end: InstantLike) =>
+const hoursBetween = (start: InstantLike, end: InstantLike) =>
   round2(Temporal.Instant.from(start).until(end).total("hours"));
 
-export const isoZ = (i: Temporal.Instant) => i.toString({ smallestUnit: "second" });
+const isoZ = (i: Temporal.Instant) => i.toString({ smallestUnit: "second" });
 
 export function interval(date: string, start: string, end: string, tz: string) {
   if (end === start)
