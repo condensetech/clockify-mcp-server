@@ -222,6 +222,7 @@ test("list_time_entries pages until Last-Page and converts back to the profile t
   expect(entries[200]).toEqual({
     id: "last",
     project: "Acme",
+    client: null,
     task: null,
     description: "",
     date: "2026-08-18",
@@ -267,6 +268,30 @@ test("list_time_entries reports a running time entry without counting its durati
   });
   expect(text(r)).toContain("2026-08-18 09:00–10:00 Acme — standup (1h) [done]");
   expect(text(r)).toContain("10:00–running Acme (?h) [running]");
+});
+
+test("list_time_entries names each entry's project with its client, and its task", async () => {
+  timeEntries = [
+    entry("both", "2026-08-18T07:00:00Z", "2026-08-18T08:00:00Z", {
+      project: { name: "Sales", clientName: "Evil Inc" },
+      task: { name: "Design" },
+    }),
+    entry("no-client", "2026-08-18T08:00:00Z", "2026-08-18T09:00:00Z", {
+      task: { name: "Design" },
+    }),
+    entry("no-project", "2026-08-18T09:00:00Z", "2026-08-18T10:00:00Z", { project: null }),
+  ];
+  const r = await call("list_time_entries", { from: "2026-08-18", to: "2026-08-18" });
+  expect(r.structuredContent).toMatchObject({
+    entries: [
+      { id: "both", project: "Sales", client: "Evil Inc", task: "Design" },
+      { id: "no-client", project: "Acme", client: null, task: "Design" },
+      { id: "no-project", project: null, client: null, task: null },
+    ],
+  });
+  expect(text(r)).toContain("09:00–10:00 Sales (Evil Inc) / Design (1h) [both]");
+  expect(text(r)).toContain("10:00–11:00 Acme / Design (1h) [no-client]");
+  expect(text(r)).toContain("11:00–12:00 no project (1h) [no-project]");
 });
 
 test("list_time_entries says so when there is nothing", async () => {

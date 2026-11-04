@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import pkg from "../package.json";
-import { clockify, round2 } from "./clockify.ts";
+import { clockify, projectLabel, round2 } from "./clockify.ts";
 
 const ok = <T extends Record<string, unknown>>(text: string, structuredContent: NoInfer<T>) => ({
   content: [{ type: "text" as const, text }],
@@ -55,6 +55,7 @@ const ListTimeEntriesOutput = z.object({
     z.object({
       id: z.string(),
       project: z.string().nullable(),
+      client: z.string().nullable(),
       task: z.string().nullable(),
       description: z.string(),
       date: z.string(),
@@ -98,7 +99,7 @@ export function createServer() {
         clientName: p.clientName,
       }));
       return ok<ListProjectsOutput>(
-        list.map((p) => `${p.name}${p.clientName ? ` (${p.clientName})` : ""}`).join("\n"),
+        list.map((p) => projectLabel(p.name, p.clientName)).join("\n"),
         { projects: list },
       );
     },
@@ -167,11 +168,15 @@ export function createServer() {
     async ({ from, to }) => {
       const entries = await timeEntries(from, to);
       const total = round2(entries.reduce((n, e) => n + (e.hours ?? 0), 0));
+      const what = (e: (typeof entries)[number]) =>
+        e.project
+          ? `${projectLabel(e.project, e.client)}${e.task ? ` / ${e.task}` : ""}`
+          : "no project";
       const text =
         entries
           .map(
             (e) =>
-              `${e.date} ${e.start}–${e.end ?? "running"} ${e.project ?? "no project"}${
+              `${e.date} ${e.start}–${e.end ?? "running"} ${what(e)}${
                 e.description ? ` — ${e.description}` : ""
               } (${e.hours ?? "?"}h) [${e.id}]`,
           )
