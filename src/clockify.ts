@@ -95,12 +95,15 @@ export function lookups() {
 
   async function timeEntries(from: string, to: string) {
     const [ws, tz, { id: userId }] = await Promise.all([workspaceId(), timeZone(), user()]);
-    const start = isoZ(profileTimeToUtc(`${from}T00:00`, tz));
-    const end = isoZ(profileTimeToUtc(`${to}T23:59:59`, tz));
+    // Clockify shifts this window back by the profile time zone's offset, so ask for a day more on
+    // each side and keep only the entries whose entry date is in range.
+    const day = (date: string, days: number) => Temporal.PlainDate.from(date).add({ days });
+    const start = isoZ(profileTimeToUtc(`${day(from, -1)}T00:00`, tz));
+    const end = isoZ(profileTimeToUtc(`${day(to, 2)}T00:00`, tz));
     const raw = await all<HydratedEntry>(
       `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
     );
-    return raw.map((e) => {
+    const entries = raw.map((e) => {
       const { start, end } = e.timeInterval;
       const s = utcToProfileTime(start, tz);
       return {
@@ -114,6 +117,7 @@ export function lookups() {
         hours: end ? hoursBetween(start, end) : null,
       };
     });
+    return entries.filter((e) => e.date >= from && e.date <= to);
   }
 
   return {
