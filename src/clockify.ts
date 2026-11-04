@@ -94,34 +94,46 @@ export function clockify({
 
   const user = memoSuccesses(() => api<User>("/user"));
 
-  async function workspaceId() {
-    return (await user()).activeWorkspace;
-  }
-
-  async function timeZone() {
-    const tz = (await user()).settings?.timeZone;
+  function timeZone(u: User) {
+    const tz = u.settings?.timeZone;
     if (!tz)
-      throw new Error(
-        "No time zone on your Clockify profile — set it in Clockify → Preferences before logging time.",
-      );
+      throw new Error("No time zone on your Clockify profile — set it in Clockify → Preferences.");
     return tz;
   }
 
   const projects = memoSuccesses(async () =>
-    all<Project>(`/workspaces/${await workspaceId()}/projects?archived=false`),
+    all<Project>(`/workspaces/${(await user()).activeWorkspace}/projects?archived=false`),
   );
 
   const tasks = memoSuccesses(async (projectId) =>
-    all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
+    all<Task>(`/workspaces/${(await user()).activeWorkspace}/projects/${projectId}/tasks`),
   );
 
+  async function resolveProject(name: string, client?: string) {
+    let list = await projects();
+    if (client) {
+      const clients = [...new Set(list.flatMap((p) => (p.clientName ? [p.clientName] : [])))];
+      const { name: clientName } = pick(
+        "client",
+        client,
+        clients.map((name) => ({ name })),
+      );
+      list = list.filter((p) => p.clientName === clientName);
+    }
+    return pick("project", name, list, (p) => projectLabel(p.name, p.clientName));
+  }
+
   async function logTime(entries: NewTimeEntry[]): Promise<LoggedTime[]> {
-    const [ws, tz] = await Promise.all([workspaceId(), timeZone()]);
+    const u = await user();
+    const ws = u.activeWorkspace;
+    const tz = timeZone(u);
     const outcomes: LoggedTime[] = [];
     for (const entry of entries) {
       try {
         const project = await resolveProject(entry.project, entry.client);
-        const taskId = entry.task ? (await resolveTask(project.id, entry.task)).id : undefined;
+        const taskId = entry.task
+          ? pick("task", entry.task, await tasks(project.id)).id
+          : undefined;
         const { start, end, hours } = interval(entry.date, entry.start, entry.end, tz);
         const { id } = await api<{ id: string }>(`/workspaces/${ws}/time-entries`, {
           method: "POST",
@@ -149,14 +161,16 @@ export function clockify({
   }
 
   async function timeEntries(from: string, to: string) {
-    const [ws, tz, { id: userId }] = await Promise.all([workspaceId(), timeZone(), user()]);
+    const u = await user();
+    const tz = timeZone(u);
     // Clockify shifts this window back by the profile time zone's offset, so ask for a day more on
     // each side and keep only the entries whose entry date is in range.
-    const day = (date: string, days: number) => Temporal.PlainDate.from(date).add({ days });
-    const start = isoZ(profileTimeToUtc(`${day(from, -1)}T00:00`, tz));
-    const end = isoZ(profileTimeToUtc(`${day(to, 2)}T00:00`, tz));
+    const startOfDay = (date: string, days: number) =>
+      isoZ(day(date, days).toZonedDateTime(tz).toInstant());
+    const start = startOfDay(from, -1);
+    const end = startOfDay(to, 2);
     const raw = await all<HydratedEntry>(
-      `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
+      `/workspaces/${u.activeWorkspace}/user/${u.id}/time-entries?start=${start}&end=${end}&hydrated=true`,
     );
     const entries = raw.map((e) => {
       const { start, end } = e.timeInterval;
@@ -177,7 +191,7 @@ export function clockify({
   }
 
   async function deleteTimeEntries(ids: string[]) {
-    const [ws, { id: userId }] = await Promise.all([workspaceId(), user()]);
+    const { activeWorkspace: ws, id: userId } = await user();
     const deleted: string[] = [];
     const failed: { id: string; error: string }[] = [];
     try {
@@ -203,22 +217,6 @@ export function clockify({
     }
     return { deleted, failed };
   }
-
-  async function resolveProject(name: string, client?: string) {
-    let list = await projects();
-    if (client) {
-      const clients = [...new Set(list.flatMap((p) => (p.clientName ? [p.clientName] : [])))];
-      const { name: clientName } = pick(
-        "client",
-        client,
-        clients.map((name) => ({ name })),
-      );
-      list = list.filter((p) => p.clientName === clientName);
-    }
-    return pick("project", name, list, (p) => projectLabel(p.name, p.clientName));
-  }
-  const resolveTask = async (projectId: string, name: string) =>
-    pick("task", name, await tasks(projectId));
 
   return {
     projects,
@@ -272,13 +270,15 @@ type InstantLike = Temporal.Instant | string;
 const hoursBetween = (start: InstantLike, end: InstantLike) =>
   round2(Temporal.Instant.from(start).until(end).total("hours"));
 
+const day = (date: string, days: number) => Temporal.PlainDate.from(date).add({ days });
+
 const isoZ = (i: Temporal.Instant) => i.toString({ smallestUnit: "second" });
 
 export function interval(date: string, start: string, end: string, tz: string) {
   if (end === start)
     throw new Error(`Start and end are both "${start}" on ${date} — a zero-length entry.`);
   const s = profileTimeToUtc(`${date}T${start}`, tz);
-  const endDate = end < start ? Temporal.PlainDate.from(date).add({ days: 1 }).toString() : date;
+  const endDate = end < start ? day(date, 1).toString() : date;
   const e = profileTimeToUtc(`${endDate}T${end}`, tz);
   return { start: isoZ(s), end: isoZ(e), hours: hoursBetween(s, e) };
 }
