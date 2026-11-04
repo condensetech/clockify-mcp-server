@@ -105,11 +105,13 @@ not what you think it is, fix it in Clockify preferences.
 
 ### Environment
 
-| Variable                | Required | Notes                                                                                          |
-| ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `CLOCKIFY_API_KEY`      | yes      | Preferences → Advanced → Manage API keys                                                       |
-| `CLOCKIFY_WORKSPACE_ID` | no       | Defaults to your active workspace — only needed if you are in several                          |
-| `CLOCKIFY_API_BASE`     | no       | Regional hosts: `https://euc1.clockify.me/api/v1` (EU), `euw2` (UK), `use2` (US), `apse2` (AU) |
+| Variable            | Required | Notes                                                                                          |
+| ------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `CLOCKIFY_API_KEY`  | yes      | Preferences → Advanced → Manage API keys                                                       |
+| `CLOCKIFY_API_BASE` | no       | Regional hosts: `https://euc1.clockify.me/api/v1` (EU), `euw2` (UK), `use2` (US), `apse2` (AU) |
+
+Time is logged to your active workspace: the one selected in Clockify. To use
+another, switch to it in Clockify.
 
 ### If something goes wrong
 
