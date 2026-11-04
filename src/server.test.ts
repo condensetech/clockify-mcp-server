@@ -81,7 +81,6 @@ const env = { ...process.env };
 let client: Client;
 
 beforeAll(() => {
-  delete process.env.CLOCKIFY_WORKSPACE_ID;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";

@@ -90,7 +90,7 @@ export function clockify() {
   const user = memoSuccesses(() => api<User>("/user"));
 
   async function workspaceId() {
-    return configured("CLOCKIFY_WORKSPACE_ID") ?? (await user()).activeWorkspace;
+    return (await user()).activeWorkspace;
   }
 
   async function timeZone() {
