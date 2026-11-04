@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { PAGE_SIZE } from "./clockify.ts";
 import { createServer } from "./server.ts";
@@ -76,37 +76,30 @@ function clockify(method: string, path: string, query: URLSearchParams, body: un
   return new Response(`unexpected ${method} ${path}`, { status: 500 });
 }
 
-const realFetch = globalThis.fetch;
-const env = { ...process.env };
+const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(String(input));
+  const method = init?.method ?? "GET";
+  const path = url.pathname.replace(/^.*?\/api\/v1/, "");
+  const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+  calls.push({ method, path, query: url.searchParams, body });
+  return clockify(method, path, url.searchParams, body);
+}) as typeof fetch;
+
 let client: Client;
 
-beforeAll(() => {
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(String(input));
-    const method = init?.method ?? "GET";
-    const path = url.pathname.replace(/^.*?\/api\/v1/, "");
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ method, path, query: url.searchParams, body });
-    return clockify(method, path, url.searchParams, body);
-  }) as typeof fetch;
-});
-
-afterAll(() => {
-  globalThis.fetch = realFetch;
-  process.env = env;
-});
+async function connect(apiKey: string | undefined) {
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await createServer({ apiKey, fetch: fakeFetch }).connect(serverSide);
+  client = new Client({ name: "test", version: "0" });
+  await client.connect(clientSide);
+}
 
 beforeEach(async () => {
-  process.env.CLOCKIFY_API_KEY = "test-key";
   calls = [];
   user = USER;
   timeEntries = [];
   nextId = 1;
-
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await createServer().connect(serverSide);
-  client = new Client({ name: "test", version: "0" });
-  await client.connect(clientSide);
+  await connect("test-key");
 });
 
 afterEach(async () => {
@@ -357,7 +350,8 @@ test("delete_time_entries does not retry one at a time when the bulk request fai
 });
 
 test("a missing API key comes back as a tool error, not a crash", async () => {
-  process.env.CLOCKIFY_API_KEY = "";
+  await client.close();
+  await connect(undefined);
   const r = await call("delete_time_entries", { ids: ["a1"] });
   expect(r.isError).toBe(true);
   expect(text(r)).toContain("CLOCKIFY_API_KEY is not set");

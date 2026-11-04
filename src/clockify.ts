@@ -1,7 +1,3 @@
-const configured = (name: string) => process.env[name] || undefined;
-
-const BASE = configured("CLOCKIFY_API_BASE") ?? "https://api.clockify.me/api/v1";
-
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 class ClockifyError extends Error {
@@ -10,26 +6,6 @@ class ClockifyError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  const key = configured("CLOCKIFY_API_KEY");
-  if (!key) throw new Error("CLOCKIFY_API_KEY is not set");
-  const res = await fetch(BASE + path, {
-    ...init,
-    headers: { "X-Api-Key": key, "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok)
-    throw new ClockifyError(
-      res.status,
-      `Clockify ${init?.method ?? "GET"} ${path} → ${res.status}: ${await res.text()}`,
-    );
-  return res;
-}
-
-async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-  const res = await request(path, init);
-  return (res.status === 204 ? null : await res.json()) as T;
 }
 
 type User = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
@@ -60,17 +36,6 @@ type LoggedTime =
 
 export const PAGE_SIZE = 200;
 
-async function all<T>(path: string): Promise<T[]> {
-  const items: T[] = [];
-  const sep = path.includes("?") ? "&" : "?";
-  for (let page = 1; ; page++) {
-    // Clockify silently ignores `pageSize`, the name its own docs give, and returns 50 per page.
-    const res = await request(`${path}${sep}page-size=${PAGE_SIZE}&page=${page}`);
-    items.push(...((await res.json()) as T[]));
-    if (res.headers.get("Last-Page") !== "false") return items;
-  }
-}
-
 function memoSuccesses<V>(load: (key: string) => Promise<V>) {
   const cache = new Map<string, Promise<V>>();
   return (key = ""): Promise<V> => {
@@ -86,7 +51,47 @@ function memoSuccesses<V>(load: (key: string) => Promise<V>) {
   };
 }
 
-export function clockify() {
+export type ClockifySettings = {
+  apiKey?: string;
+  apiBase?: string;
+  fetch?: typeof globalThis.fetch;
+};
+
+export function clockify({
+  apiKey,
+  apiBase = "https://api.clockify.me/api/v1",
+  fetch = globalThis.fetch,
+}: ClockifySettings) {
+  async function request(path: string, init?: RequestInit): Promise<Response> {
+    if (!apiKey) throw new Error("CLOCKIFY_API_KEY is not set");
+    const res = await fetch(apiBase + path, {
+      ...init,
+      headers: { "X-Api-Key": apiKey, "Content-Type": "application/json", ...init?.headers },
+    });
+    if (!res.ok)
+      throw new ClockifyError(
+        res.status,
+        `Clockify ${init?.method ?? "GET"} ${path} → ${res.status}: ${await res.text()}`,
+      );
+    return res;
+  }
+
+  async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+    const res = await request(path, init);
+    return (res.status === 204 ? null : await res.json()) as T;
+  }
+
+  async function all<T>(path: string): Promise<T[]> {
+    const items: T[] = [];
+    const sep = path.includes("?") ? "&" : "?";
+    for (let page = 1; ; page++) {
+      // Clockify silently ignores `pageSize`, the name its own docs give, and returns 50 per page.
+      const res = await request(`${path}${sep}page-size=${PAGE_SIZE}&page=${page}`);
+      items.push(...((await res.json()) as T[]));
+      if (res.headers.get("Last-Page") !== "false") return items;
+    }
+  }
+
   const user = memoSuccesses(() => api<User>("/user"));
 
   async function workspaceId() {
