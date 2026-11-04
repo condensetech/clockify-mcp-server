@@ -17,3 +17,4 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run ci
+      - run: bun audit
