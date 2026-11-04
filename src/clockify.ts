@@ -33,6 +33,13 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
 export type User = { id: string; activeWorkspace: string; settings?: { timeZone?: string } };
 export type Project = { id: string; name: string; clientName?: string; archived: boolean };
 type Task = { id: string; name: string };
+type HydratedEntry = {
+  id: string;
+  description?: string;
+  project?: { name: string } | null;
+  task?: { name: string } | null;
+  timeInterval: { start: string; end: string | null };
+};
 
 export const PAGE_SIZE = 200;
 
@@ -86,11 +93,35 @@ export function lookups() {
     all<Task>(`/workspaces/${await workspaceId()}/projects/${projectId}/tasks`),
   );
 
+  async function timeEntries(from: string, to: string) {
+    const [ws, tz, { id: userId }] = await Promise.all([workspaceId(), timeZone(), user()]);
+    const start = isoZ(profileTimeToUtc(`${from}T00:00`, tz));
+    const end = isoZ(profileTimeToUtc(`${to}T23:59:59`, tz));
+    const raw = await all<HydratedEntry>(
+      `/workspaces/${ws}/user/${userId}/time-entries?start=${start}&end=${end}&hydrated=true`,
+    );
+    return raw.map((e) => {
+      const { start, end } = e.timeInterval;
+      const s = utcToProfileTime(start, tz);
+      return {
+        id: e.id,
+        project: e.project?.name ?? null,
+        task: e.task?.name ?? null,
+        description: e.description ?? "",
+        date: s.date,
+        start: s.time,
+        end: end ? utcToProfileTime(end, tz).time : null,
+        hours: end ? hoursBetween(start, end) : null,
+      };
+    });
+  }
+
   return {
     user,
     workspaceId,
     timeZone,
     projects,
+    timeEntries,
     resolveProject: async (name: string) => pick("project", name, await projects()),
     resolveTask: async (projectId: string, name: string) =>
       pick("task", name, await tasks(projectId)),
