@@ -73,8 +73,9 @@ Add this to its MCP config:
 
 </details>
 
-`@0` keeps you on `0.x` releases, so a breaking `1.0` never reaches you
-unannounced.
+**Updates are automatic**: each time your harness starts the server, `npx`
+fetches the latest `0.x` release. `@0` also means a breaking `1.0` never
+reaches you unannounced.
 
 **4. Check it** in a fresh session:
 
