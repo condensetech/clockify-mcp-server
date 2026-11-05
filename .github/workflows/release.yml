@@ -12,29 +12,36 @@ jobs:
     needs: ci
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # gh release create
+      contents: write # gh release create --draft
       id-token: write # npm trusted publishing and provenance
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
-      # Trusted publishing needs npm >= 11.5.1; Node 24 ships 11.x.
+      # Staged publishing needs npm >= 11.15 (checked below); Node 24 ships 11.x.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      # This job can publish to npm: run no install scripts, ours (lefthook) included.
+      # This job can stage on npm: run no install scripts, ours (lefthook) included.
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Tag matches package.json
         run: |
           version=$(node -p 'require("./package.json").version')
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package.json $version"; exit 1; }
+      - name: npm supports staged publishing
+        run: |
+          npm --version
+          node -e 'const [a,b]=process.argv[1].split(".").map(Number); process.exit(a>11||(a===11&&b>=15)?0:1)' "$(npm --version)"
       - run: bun run build
-      - run: npm publish ./dist --access public --provenance
-      - name: GitHub release
+      # The trusted publisher may only stage: the version goes public when a maintainer approves it
+      # with 2FA (npm stage approve, or Staged Packages on npmjs.com). CI can't approve.
+      - run: npm stage publish ./dist --access public --provenance
+      # A draft, published by hand once the staged version is approved on npm.
+      - name: GitHub release (draft)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
           awk -v v="$version" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --draft
