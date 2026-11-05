@@ -25,10 +25,10 @@ The deciding question: **is the affected package in the production tree?**
 if it bundles anything outside that tree, so "production tree" and "what ships"
 are the same thing.
 
-| Signal                                                                                          | Meaning                                          | Action                                                                                                                                                  |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI step "Audit shipped code" (`bun audit --production`) fails, or a `runtime-security` PR opens | The vulnerable code is in the published bundle   | Merge, bump the patch version, add a CHANGELOG entry naming the advisory, push the tag. Adopters on `@0` get it the next time `npx` resolves the range. |
-| Only "Audit dev only" (`bun audit`) fails, or a `dev-security` PR opens                         | Only the maintainer's machine and CI are exposed | Merge, no release.                                                                                                                                      |
+| Signal                                                                                          | Meaning                                          | Action                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI step "Audit shipped code" (`bun audit --production`) fails, or a `runtime-security` PR opens | The vulnerable code is in the published bundle   | Merge, bump the patch version, add a CHANGELOG entry naming the advisory, push the tag. Adopters on `@0` get it the next time their harness starts the server. |
+| Only "Audit dev only" (`bun audit`) fails, or a `dev-security` PR opens                         | Only the maintainer's machine and CI are exposed | Merge, no release.                                                                                                                                             |
 
 CI runs weekly as well as on pushes, so an advisory published against an
 unchanged lockfile still turns it red.
