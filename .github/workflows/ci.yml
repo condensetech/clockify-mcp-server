@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Catches advisories published against an unchanged lockfile.
+  schedule:
+    - cron: "0 6 * * 1"
 
 jobs:
   test:
@@ -17,4 +20,25 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run ci
-      - run: bun audit
+      - name: Audit shipped code
+        run: bun audit --production
+      - name: Audit dev only
+        run: bun audit
+
+  node:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - run: node --version
+      - run: bun test src/node.test.ts
