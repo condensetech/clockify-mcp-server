@@ -4,7 +4,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Security PRs say in their title whether the fix ships to adopters (runtime) or not (dev).
     groups:
+      runtime-security:
+        applies-to: security-updates
+        dependency-type: production
+      dev-security:
+        applies-to: security-updates
+        dependency-type: development
       minor-and-patch:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
