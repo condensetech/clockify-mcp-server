@@ -45,9 +45,9 @@ await Bun.write(
       description: pkg.description,
       license: pkg.license,
       repository: pkg.repository,
-      type: "module",
+      type: pkg.type,
       bin: { "clockify-mcp-server": "index.js" },
-      engines: { node: ">=20" },
+      engines: { node: pkg.engines.node },
     },
     null,
     2,
@@ -57,7 +57,10 @@ await cp(join(root, "README.md"), join(dist, "README.md"));
 await cp(join(root, "LICENSE"), join(dist, "LICENSE"));
 console.error(`built ${pkg.name}@${pkg.version} in dist/ (${[...bundled].sort().join(", ")})`);
 
-type Manifest = { dependencies?: Record<string, string>; optionalDependencies?: object };
+type Manifest = {
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+};
 
 // `dependencies` and everything they depend on, resolved through node_modules the way Node does.
 function productionTree(): Set<string> {

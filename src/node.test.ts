@@ -9,7 +9,7 @@ import pkg from "../package.json";
 
 const BUNDLE = `${import.meta.dir}/../dist/index.js`;
 
-let posted: { start: string; end: string }[] = [];
+const posted: { start: string; end: string }[] = [];
 let fake: ReturnType<typeof Bun.serve>;
 let client: Client;
 
@@ -63,7 +63,6 @@ test("reports the version from package.json", () => {
 });
 
 test("log_time converts profile time to UTC across daylight saving", async () => {
-  posted = [];
   const r = await client.callTool({
     name: "log_time",
     arguments: {
