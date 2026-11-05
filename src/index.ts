@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import "temporal-polyfill/global";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createServer } from "./server.ts";
 
