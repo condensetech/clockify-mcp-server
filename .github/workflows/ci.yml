@@ -7,6 +7,7 @@ on:
   # Catches advisories published against an unchanged lockfile.
   schedule:
     - cron: "0 6 * * 1"
+  workflow_call:
 
 jobs:
   test:
