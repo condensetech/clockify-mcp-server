@@ -209,8 +209,7 @@ export function clockify({
       deleted.push(...ids);
     } catch (err) {
       if (!(err instanceof ClockifyError && err.status === 400)) throw err;
-      // Clockify's bulk delete is all-or-nothing: one bad id fails the batch and deletes
-      // nothing (docs/bulk-delete-time-entries.md).
+      // Clockify's bulk delete is all-or-nothing: one bad id fails the batch and deletes nothing.
       for (const id of ids) {
         try {
           await api(`/workspaces/${ws}/time-entries/${encodeURIComponent(id)}`, {
