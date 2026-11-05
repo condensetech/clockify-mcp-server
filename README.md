@@ -34,13 +34,7 @@ authorization of its own. **Anything your API key can do, the tools can too**.
 
 Everything you need if you just want to log time. Takes about two minutes.
 
-**1. Install [bun](https://bun.sh)** (tested on 1.4.4) and the dependencies:
-
-```sh
-curl -fsSL https://bun.sh/install | bash # install bun if needed
-git clone https://github.com/condensetech/clockify-mcp-server.git && cd clockify-mcp-server
-bun install
-```
+**1. Have [Node](https://nodejs.org) 20 or later**. Check with `node --version`.
 
 **2. Get your Clockify API key**:
 
@@ -51,44 +45,36 @@ bun install
 <details>
 <summary><b>Claude Code</b></summary>
 
-From the repo root you just cloned:
-
 ```sh
-claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- bun "$PWD/src/index.ts"
+claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- npx -y @condensetech/clockify-mcp-server@0
 ```
 
-`-s user` writes it to your personal config so it loads in **every** project,
-not just the clone (the default scope, `local`, would bind it to that
-directory). `$PWD` is expanded by your shell before `claude` sees it, so the
-stored path is absolute.
+`-s user` writes it to your personal config so it loads in **every** project
+(the default scope, `local`, would bind it to the current directory).
 
 </details>
 
 <details>
 <summary><b>Other harnesses</b> (Cursor, VS Code, Zed, Claude Desktop…)</summary>
 
-Same three things in its MCP config. Print the path to paste:
-
-```sh
-echo "$PWD/src/index.ts"
-```
+Add this to its MCP config:
 
 ```json
 {
   "mcpServers": {
     "clockify": {
-      "command": "bun",
-      "args": ["<paste the absolute path here>"],
+      "command": "npx",
+      "args": ["-y", "@condensetech/clockify-mcp-server@0"],
       "env": { "CLOCKIFY_API_KEY": "<key>" }
     }
   }
 }
 ```
 
-**The path must be absolute** so your harness starts the server from whatever
-directory it happens to be working in.
-
 </details>
+
+`@0` keeps you on `0.x` releases, so a breaking `1.0` never reaches you
+unannounced.
 
 **4. Check it** in a fresh session:
 
@@ -130,24 +116,41 @@ another, switch to it in Clockify.
 
 ## Develop it
 
+Needs [bun](https://bun.sh) (tested on 1.4.4). Bun is only the dev toolchain:
+the published package runs on Node.
+
 ```sh
-bun test          # unit tests + each tool end to end against a fake Clockify, no network
+git clone https://github.com/condensetech/clockify-mcp-server.git && cd clockify-mcp-server
+bun install
+```
+
+```sh
+bun test          # unit tests, each tool end to end against a fake Clockify, and the Node build
 bun run typecheck # tsc --noEmit
 bun run fix       # biome format + lint, applies fixes
 bun run ci        # biome ci: the read-only check CI runs
-bun run start     # start the server on stdio (needs CLOCKIFY_API_KEY)
+bun run build     # the npm package in dist/: one bundled file for Node, no dependencies
+bun run start     # start the server on stdio from source (needs CLOCKIFY_API_KEY)
 ```
 
 `bun install` also installs the git hooks (`prepare` → `lefthook install`), so
 `biome check --write` runs on your staged files at commit time and restages what
 it fixed, and `typecheck` runs on the whole project. CI runs typecheck, tests,
-`biome ci` and `bun audit` on every push to `main` and every pull request.
-Nothing else to set up.
+`biome ci` and `bun audit` on every push to `main` and every pull request, plus
+the Node build's smoke test on Node 20, 22, 24 and 26. Nothing else to set up.
+
+To point your harness at your checkout instead of the npm release:
+
+```sh
+claude mcp add clockify -s user -e CLOCKIFY_API_KEY=<key> -- bun "$PWD/src/index.ts"
+```
 
 For local runs, bun auto-loads `.env` from the repo root, so a gitignored
 `CLOCKIFY_API_KEY=<key>` there saves you retyping it. That only works when the
-working directory _is_ the repo, which is why the harness config above passes
-the key explicitly.
+working directory _is_ the repo, which is why the harness config passes the key
+explicitly.
+
+Releases and security updates: see [`RELEASING.md`](RELEASING.md).
 
 ## Contribute
 
@@ -167,8 +170,3 @@ the key explicitly.
 
 Dependabot opens a weekly pull request for dependency and GitHub Actions
 updates; it goes through the same checks and review.
-
-## Shipping to someone without bun
-
-`bun build --compile --outfile clockify-mcp src/index.ts` produces one
-self-contained binary to point the harness at.
