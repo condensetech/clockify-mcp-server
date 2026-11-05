@@ -10,7 +10,8 @@
     "test": "bun test",
     "fix": "biome check --write .",
     "ci": "biome ci .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/index.ts --target=node --minify --outfile dist/index.js"
   },
   "engines": {
     "bun": ">=1.4.4"
