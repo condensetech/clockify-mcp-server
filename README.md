@@ -10,7 +10,8 @@ through the UI.
 > → one `log_time` call, 10 entries created, 40h total.
 
 A local stdio MCP server. Run it with your own API key, nothing is shared or
-hosted.
+hosted. It ships as a single file with no dependencies: a 140 kB download, so
+`npx` starts it in a moment.
 
 | Tool                  | What it does                                                                                                                   |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
