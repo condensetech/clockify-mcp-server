@@ -1,5 +1,5 @@
 {
-  "name": "clockify-mcp-server",
+  "name": "@condensetech/clockify-mcp-server",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -11,7 +11,7 @@
     "fix": "biome check --write .",
     "ci": "biome ci .",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --target=node --minify --outfile dist/index.js"
+    "build": "bun scripts/build.ts"
   },
   "engines": {
     "bun": ">=1.4.4"
@@ -27,5 +27,10 @@
     "@types/bun": "^1.4.4",
     "lefthook": "^2.2.2",
     "typescript": "^7.0.2"
+  },
+  "description": "Log time to your Clockify projects by asking your agent: a local stdio MCP server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/condensetech/clockify-mcp-server.git"
   }
 }
