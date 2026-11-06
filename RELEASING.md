@@ -14,11 +14,11 @@ merge commit, so the commit keeps the tag you gave it on the branch.
    since the last tag (breaking → major, `feat:` → minor, anything else → patch), writes
    the CHANGELOG entry, commits and tags. Preview with `--dry-run`; force a version with
    `--release-as X.Y.Z`.
-2. Push, open the PR and let it merge when CI is green:
+2. Push, open the PR and merge it:
 
    ```sh
    git push -u --follow-tags origin HEAD
-   gh pr create --fill && gh pr merge --merge --auto
+   gh pr create --fill
    ```
 
    Pushing the tag starts nothing. The release starts when the merge brings the tagged

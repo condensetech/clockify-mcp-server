@@ -4,6 +4,12 @@ Versions follow [semver](https://semver.org). Adopters run `@1`, so a new major 
 only release that doesn't reach them on its own. It's kept for what the agent can't adapt
 to: see [what counts as breaking](RELEASING.md#what-counts-as-breaking).
 
+## [1.0.1](https://github.com/condensetech/clockify-mcp-server/compare/v1.0.0...v1.0.1) (2026-11-06)
+
+### Bug Fixes
+
+- publish unminified bundle ([c1623eb](https://github.com/condensetech/clockify-mcp-server/commit/c1623eb2580b48d13494b814c5c089d66e3887d7))
+
 ## [1.0.0](https://github.com/condensetech/clockify-mcp-server/compare/v0.1.0...v1.0.0) (2026-11-06)
 
 No code changes, just the official stable version to set the `@1` floor. If you registered
