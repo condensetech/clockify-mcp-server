@@ -14,7 +14,6 @@ const result = await Bun.build({
   outdir: dist,
   naming: "index.js",
   target: "node",
-  minify: true,
   metafile: true,
 });
 if (!result.success) {
