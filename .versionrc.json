@@ -1,0 +1,3 @@
+{
+  "header": "# Changelog\n\nVersions follow [semver](https://semver.org). Adopters run `@1`, so a new major is the\nonly release that doesn't reach them on its own. It's kept for what the agent can't adapt\nto: see [what counts as breaking](RELEASING.md#what-counts-as-breaking).\n"
+}

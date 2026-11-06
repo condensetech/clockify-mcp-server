@@ -1,21 +1,54 @@
 name: Release
 
+# A release starts when a push to main brings in the commit tagged v<package.json version>, not
+# when the tag is pushed: bun run bump tags on the PR branch, before review.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.find.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # history and tags
+      - id: find
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          tag="v$(node -p 'require("./package.json").version')"
+          commit=$(git rev-parse -q --verify "refs/tags/$tag^{commit}") || { echo "no tag $tag: not a release"; exit 0; }
+          if git merge-base --is-ancestor "$commit" "$BEFORE" 2>/dev/null; then
+            echo "$tag was already on main: not a release"; exit 0
+          fi
+          # The release commit must be the PR's last commit (the merge's second parent), so fixes
+          # pushed after bun run bump can't be left out of the release.
+          if [ "$commit" != "$(git rev-parse HEAD)" ] && [ "$commit" != "$(git rev-parse -q --verify HEAD^2)" ]; then
+            echo "$tag isn't the last commit of the merged PR: delete it and run bun run bump again"; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   ci:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
     uses: ./.github/workflows/ci.yml
 
   publish:
-    needs: ci
+    needs: [tag, ci]
     runs-on: ubuntu-24.04
     permissions:
       contents: write # gh release create --draft
       id-token: write # npm trusted publishing and provenance
+    env:
+      TAG: ${{ needs.tag.outputs.tag }}
     steps:
+      # The tagged commit, not the merge: the package matches its CHANGELOG entry.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -25,10 +58,6 @@ jobs:
           node-version: 24
       # This job can stage on npm: run no install scripts, ours (lefthook) included.
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Tag matches package.json
-        run: |
-          version=$(node -p 'require("./package.json").version')
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package.json $version"; exit 1; }
       - name: npm supports staged publishing
         run: |
           npm --version
@@ -42,6 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=${GITHUB_REF_NAME#v}
-          awk -v v="$version" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --draft
+          version=${TAG#v}
+          # Headings: "## [0.1.1](compare-url) (date)" from bun run bump, "## 0.1.0 — date" before it.
+          awk -v v="$version" '$0 ~ "^## \\[?" v "([] ]|$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --draft
