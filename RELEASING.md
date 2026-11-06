@@ -1,49 +1,64 @@
 # Releasing
 
-The npm package is `dist/`, built by `bun run build`: one bundled `index.js`
-for Node, a generated `package.json` with no dependencies, README and LICENSE.
-The root `package.json` is `private`, so `npm publish` from the repo root fails
-on purpose.
+Adopters run `npx …@1`: every 1.x release reaches them the next time their harness starts
+the server. A new major is the only release that doesn't.
 
 ## Cut a release
 
-1. Bump `version` in `package.json` and move the `CHANGELOG.md` entry from
-   "unreleased" to today's date. Commit as `chore: release x.y.z`.
-2. Tag and push: `git tag vx.y.z && git push origin main vx.y.z`.
-3. The release workflow runs CI and the Node matrix, checks the tag matches
-   `package.json`, **stages** `./dist` on npm through trusted publishing (with
-   provenance, no stored token) and creates a draft GitHub release.
-4. Approve the staged version, with 2FA: `npm stage list`, check it with
-   `npm stage view <stage-id>` (or `npm stage download <stage-id>`), then
-   `npm stage approve <stage-id>`. Or use the Staged Packages tab on npmjs.com.
-   Only then is it public.
-5. Publish the draft GitHub release.
+The release commit reaches `main` through a pull request like any other. PRs merge with a
+merge commit, so the commit keeps the tag you gave it on the branch.
 
-The trusted publisher is allowed to stage only, not to `npm publish` or change
-dist-tags, so a compromised release job can't put a version in front of
-adopters without your approval.
+**You, locally**
 
-Check the package before tagging with `bun run build && npm pack --dry-run ./dist`:
-it should list only `index.js`, `package.json`, `README.md` and `LICENSE`.
+1. On a branch off an up-to-date `main`, `bun run bump` picks the version from the commits
+   since the last tag (breaking → major, `feat:` → minor, anything else → patch), writes
+   the CHANGELOG entry, commits and tags. Preview with `--dry-run`; force a version with
+   `--release-as X.Y.Z`.
+2. Push, open the PR and let it merge when CI is green:
+
+   ```sh
+   git push -u --follow-tags origin HEAD
+   gh pr create --fill && gh pr merge --merge --auto
+   ```
+
+   Pushing the tag starts nothing. The release starts when the merge brings the tagged
+   commit onto `main`. The release commit must be the PR's last: if you push fixes after
+   it, delete the tag (`git tag -d vX.Y.Z && git push origin :vX.Y.Z`), drop the commit
+   and bump again.
+
+**The release workflow, automatically**
+
+3. Runs CI. Any failure stops the release.
+4. Builds `dist/` from the tagged commit and **stages** it on npm with provenance. A
+   staged version isn't public, and CI can't approve it.
+5. Creates a **draft** GitHub release from the version's CHANGELOG entry.
+
+**You, to make it public**
+
+6. Approve on npm: `npm stage list`, `npm stage view <id>`, `npm stage approve <id>`.
+7. Publish the draft GitHub release, after npm, so it never announces a version nobody can
+   install.
+
+## What counts as breaking
+
+The agent rereads the tools each time the server starts, so it adapts to most changes.
+Mark a commit as breaking (`!` or `BREAKING CHANGE:`) only when it can't:
+
+- **Startup config changes**: env var, CLI argument, Node `engines` floor.
+- **A tool is renamed**: adopters' permission allowlists, hooks and skills name it.
+- **Something is removed** that the remaining tools can't do.
+- **Same schema, different meaning**: e.g. `start` read in another timezone, or a
+  `delete_time_entries` filter matching more time entries.
+
+Renaming, adding or reshaping an input, rewording a description or changing an output's
+format is `feat` or `fix`.
 
 ## Security updates
 
-The deciding question: **is the affected package in the production tree?**
-`bun audit --production` follows transitive dependencies, so it also covers
-`@modelcontextprotocol/core`, which we don't install directly. The build fails
-if it bundles anything outside that tree, so "production tree" and "what ships"
-are the same thing.
+Ask: is the vulnerable package in the production tree, i.e. in what ships?
 
-| Signal                                                                                          | Meaning                                          | Action                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CI step "Audit shipped code" (`bun audit --production`) fails, or a `runtime-security` PR opens | The vulnerable code is in the published bundle   | Merge, bump the patch version, add a CHANGELOG entry naming the advisory, push the tag, approve the staged version. Adopters on `@0` get it the next time their harness starts the server. |
-| Only "Audit dev only" (`bun audit`) fails, or a `dev-security` PR opens                         | Only the maintainer's machine and CI are exposed | Merge, no release.                                                                                                                                                                         |
+- **Yes**: CI's "Audit shipped code" fails, or a `runtime-security` PR opens. Merge it as
+  a `fix:` commit naming the advisory, then cut a release.
+- **No**: only "Audit dev only" fails, or a `dev-security` PR opens. Merge it; no release.
 
-CI runs weekly as well as on pushes, so an advisory published against an
-unchanged lockfile still turns it red.
-
-**Exception: tools that run during the build or publish** can reach adopters
-even though they are dev dependencies. Bun does the bundling, so its version
-stays pinned in CI. The release job installs with `--ignore-scripts`, because
-it can stage versions on npm through OIDC; Biome, TypeScript and lefthook don't
-run there.
+CI also runs weekly, so a new advisory turns it red without a push.
