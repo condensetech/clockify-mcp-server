@@ -4,6 +4,17 @@ Versions follow [semver](https://semver.org). Adopters run `@1`, so a new major 
 only release that doesn't reach them on its own. It's kept for what the agent can't adapt
 to: see [what counts as breaking](RELEASING.md#what-counts-as-breaking).
 
+## [1.0.2](https://github.com/condensetech/clockify-mcp-server/compare/v1.0.1...v1.0.2) (2026-11-11)
+
+Back to a minified bundle, reverting 1.0.1. Unminified, the bundle doubled to 985 kB
+without becoming readable: 98% of it is the bundled dependencies (the MCP SDK, zod and a
+Temporal polyfill), not this server. To see what `npx` runs, read `src/`: npm provenance
+ties the published file to the commit that built it.
+
+### Bug Fixes
+
+- publish minified bundle again ([fe4922a](https://github.com/condensetech/clockify-mcp-server/commit/fe4922ae7d916dc3d02032c7e72b74a5450f61db))
+
 ## [1.0.1](https://github.com/condensetech/clockify-mcp-server/compare/v1.0.0...v1.0.1) (2026-11-06)
 
 ### Bug Fixes
